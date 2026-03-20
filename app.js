@@ -37,28 +37,16 @@ function setupRealtimeSubscription() {
         };
 
         const existingIdx = appState.houses.findIndex(h => h.id === newRow.id);
-        let isEcho = false;
 
         if (existingIdx >= 0) {
-          // 수신된 업데이트 내용이 직전의 내 저장 액션에 의한 에코인지 검사(2초 이내)
-          // (JSON.stringify는 서버가 Timestamp나 JSON 키 순서를 바꿀 시 오작동하여 깜빡임을 발생시킴)
-          if (appState.lastSavedAt && appState.lastSavedHouseId === houseData.id && (Date.now() - appState.lastSavedAt < 2000)) {
-            isEcho = true;
-          }
-          
-          if (!isEcho) {
-            // 기존 객체의 참조를 유지한 채 값만 병합
-            Object.assign(appState.houses[existingIdx], houseData);
-          }
+          // 기존 객체의 참조를 유지한 채 값만 병합 (에코 판단 무관하게 무조건 동기화)
+          Object.assign(appState.houses[existingIdx], houseData);
         } else {
           appState.houses.unshift(houseData);
         }
 
-        // 내가 발생시킨 데이터 수정(Echo)일 경우 화면 전체 깜빡임(리렌더링)을 무시합니다.
-        if (!isEcho) {
-          // 현재 화면 업데이트 로직
-          updateUIForRealtime(eventType, houseData);
-        }
+        // 현재 화면 부분 업데이트 로직 호출 (깜빡임 없이 즉각 반영)
+        updateUIForRealtime(eventType, existingIdx >= 0 ? appState.houses[existingIdx] : houseData);
 
       } else if (eventType === 'DELETE') {
         appState.houses = appState.houses.filter(h => h.id !== oldRow.id);
@@ -84,18 +72,62 @@ function updateUIForRealtime(eventType, houseData) {
   if (isListView) {
     renderHouseList();
   } else if (isDetailView && appState.currentHouseId === houseData.id) {
-    // 사용자가 텍스트를 입력 중인지 확인 (입력 중이면 렌더링 스킵하여 포커스 유지)
-    const activeElem = document.activeElement;
-    const isTyping = activeElem && (activeElem.tagName === 'INPUT' || activeElem.tagName === 'TEXTAREA');
+    // 1. 상태 즉각 UI 반영 (부분 업데이트 - 깜빡임 및 입력방해 원천 차단)
+    const titleInput = document.getElementById('titleInput');
+    if (titleInput && document.activeElement !== titleInput && houseData.title !== undefined) {
+      titleInput.value = houseData.title;
+    }
+    const memoInput = document.getElementById('memoInput');
+    if (memoInput && document.activeElement !== memoInput && houseData.memo !== undefined) {
+      memoInput.value = houseData.memo;
+    }
     
-    // 사진 확대 모달이 열려있는지도 체크
-    const isModalOpen = document.getElementById('photoModal').classList.contains('active');
+    // 체크박스 상태 동기화
+    ['visit', 'contract'].forEach(type => {
+      if (houseData[type] && houseData[type].categories) {
+        houseData[type].categories.forEach(cat => {
+          cat.items.forEach(item => {
+            const itemEl = document.querySelector(`.check-item[data-item-id="${item.id}"]`);
+            if (itemEl) {
+              itemEl.classList.toggle('checked', item.checked);
+            }
+          });
+        });
+      }
+    });
 
-    if (!isTyping && !isModalOpen) {
-      // 뷰 전체를 덮어 씌우는 방식
-      const scrollPos = window.scrollY; // 스크롤 위치 기억
-      renderDetailView();
-      window.scrollTo(0, scrollPos); // 스크롤 위치 복구
+    // 점수 및 카운트 부분 업데이트
+    updateScoreUI(houseData);
+    updateCategoryCounts(houseData);
+
+    // 2. 전체 리렌더가 필요한 구조적 변경(사진 목록 등) 감지
+    let needsFullRender = false;
+    const photoCells = document.querySelectorAll('.photo-cell img');
+    if (houseData.photos && houseData.photos.length !== photoCells.length) {
+      needsFullRender = true;
+    } else if (houseData.photos) {
+      for (let i = 0; i < houseData.photos.length; i++) {
+        // 이미지가 다르거나 새로 추가/삭제된 경우
+        const currentSrc = photoCells[i].getAttribute('src');
+        if (currentSrc !== houseData.photos[i]) {
+          needsFullRender = true;
+          break;
+        }
+      }
+    }
+
+    if (needsFullRender) {
+      const activeElem = document.activeElement;
+      const isTyping = activeElem && (activeElem.tagName === 'INPUT' || activeElem.tagName === 'TEXTAREA');
+      
+      const photoModal = document.getElementById('photoModal');
+      const isModalOpen = (photoModal && photoModal.classList.contains('active')) || document.querySelector('.viewer-container') !== null;
+      
+      if (!isTyping && !isModalOpen) {
+        const scrollPos = window.scrollY; // 스크롤 위치 기억
+        renderDetailView();
+        window.scrollTo(0, scrollPos); // 스크롤 위치 복구
+      }
     }
   }
 }
