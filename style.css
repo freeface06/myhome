@@ -920,7 +920,10 @@ input, textarea, button {
 /* ========================================
    메모
    ======================================== */
-.memo-section { margin-bottom: 16px; }
+.memo-section { 
+  margin-top: 24px;
+  margin-bottom: 16px; 
+}
 
 .memo-textarea {
   width: 100%;
