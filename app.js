@@ -114,7 +114,8 @@ let appState = {
   deleteTargetId: null,
   deleteTargetType: null,
   deletePhotoIndex: null,
-  isEditMode: false,
+  isTitleEditMode: false,
+  isMemoEditMode: false,
   viewer: null
 };
 
@@ -368,7 +369,8 @@ function showListView(isPopState = false) {
 function showDetailView(houseId, isPopState = false) {
   appState.currentHouseId = houseId;
   appState.currentTab = 'visit';
-  appState.isEditMode = false;
+  appState.isTitleEditMode = false;
+  appState.isMemoEditMode = false;
   document.getElementById('listView').classList.remove('active');
   document.getElementById('detailView').classList.add('active');
   document.getElementById('fabBtn').classList.add('hidden');
@@ -403,7 +405,8 @@ function renderHeader(view) {
       <button class="header-delete" id="headerDeleteBtn">삭제</button>
     `;
     document.getElementById('backBtn').addEventListener('click', () => {
-      appState.isEditMode = false;
+      appState.isTitleEditMode = false;
+      appState.isMemoEditMode = false;
       if (history.state && history.state.view === 'detail') {
         history.back();
       } else {
@@ -512,8 +515,8 @@ function renderDetailView() {
   const visitScore = calcScore(house, 'visit');
   const contractScore = calcScore(house, 'contract');
   const offset = CIRCUMFERENCE - (score / 100) * CIRCUMFERENCE;
-  const readOnlyAttr = appState.isEditMode ? '' : 'readonly';
-  const displayStyle = appState.isEditMode ? '' : 'style="display:none;"';
+  const titleReadOnlyAttr = appState.isTitleEditMode ? '' : 'readonly';
+  const memoReadOnlyAttr = appState.isMemoEditMode ? '' : 'readonly';
 
   container.innerHTML = `
     <!-- 제목 및 수정 버튼 -->
@@ -521,9 +524,9 @@ function renderDetailView() {
       <div class="title-input-wrapper">
         <input type="text" class="title-input" id="titleInput" 
                value="${escapeHtml(house.title)}" 
-               placeholder="집 이름을 입력하세요 (예: 역삼역 5분 투룸)" ${readOnlyAttr}>
+               placeholder="집 이름을 입력하세요 (예: 역삼역 5분 투룸)" ${titleReadOnlyAttr}>
         <div class="title-actions">
-          <button class="action-btn-small" id="titleEditBtn">${appState.isEditMode ? '저장' : '수정'}</button>
+          <button class="action-btn-small" id="titleEditBtn">${appState.isTitleEditMode ? '저장' : '수정'}</button>
         </div>
       </div>
     </div>
@@ -593,10 +596,11 @@ function renderDetailView() {
 
     <!-- 메모 -->
     <div class="memo-section">
-      <div class="section-header">
+      <div class="section-header" style="display:flex; justify-content:space-between; align-items:center;">
         <div class="section-title">📝 메모</div>
+        <button class="action-btn-small" id="memoEditBtn">${appState.isMemoEditMode ? '저장' : '수정'}</button>
       </div>
-      <textarea class="memo-textarea" id="memoInput" placeholder="${appState.isEditMode ? '추가 메모를 남겨보세요...' : ''}" ${readOnlyAttr}>${escapeHtml(house.memo)}</textarea>
+      <textarea class="memo-textarea" id="memoInput" placeholder="${appState.isMemoEditMode ? '추가 메모를 남겨보세요...' : ''}" ${memoReadOnlyAttr}>${escapeHtml(house.memo)}</textarea>
     </div>
 
     <!-- 기존 맨 아래 삭제 섹션은 상단으로 이동했으므로 제거 -->
@@ -649,24 +653,50 @@ function bindDetailEvents() {
     house.updatedAt = new Date().toISOString();
   });
 
-  // 수정/저장 버튼
-  document.getElementById('titleEditBtn').addEventListener('click', () => {
-    if (appState.isEditMode) {
-      appState.isEditMode = false;
-      saveHouses();
-      renderHeader('detail');
-      renderDetailView();
-      showToast('💾 저장되었습니다.');
-    } else {
-      appState.isEditMode = true;
-      renderHeader('detail');
-      renderDetailView();
-      setTimeout(() => {
-        const input = document.getElementById('titleInput');
-        if (input) input.focus();
-      }, 100);
-    }
-  });
+  // 타이틀 수정/저장 버튼
+  const titleEditBtn = document.getElementById('titleEditBtn');
+  if (titleEditBtn) {
+    titleEditBtn.addEventListener('click', () => {
+      if (appState.isTitleEditMode) {
+        appState.isTitleEditMode = false;
+        saveHouses();
+        renderHeader('detail');
+        renderDetailView();
+        showToast('💾 집 이름이 저장되었습니다.');
+      } else {
+        appState.isTitleEditMode = true;
+        renderHeader('detail');
+        renderDetailView();
+        setTimeout(() => {
+          const input = document.getElementById('titleInput');
+          if (input) input.focus();
+        }, 100);
+      }
+    });
+  }
+
+  // 메모 수정/저장 버튼
+  const memoEditBtn = document.getElementById('memoEditBtn');
+  if (memoEditBtn) {
+    memoEditBtn.addEventListener('click', () => {
+      if (appState.isMemoEditMode) {
+        appState.isMemoEditMode = false;
+        saveHouses();
+        renderDetailView();
+        showToast('💾 메모가 저장되었습니다.');
+      } else {
+        appState.isMemoEditMode = true;
+        renderDetailView();
+        setTimeout(() => {
+          const input = document.getElementById('memoInput');
+          if (input) {
+            input.focus();
+            input.setSelectionRange(input.value.length, input.value.length);
+          }
+        }, 100);
+      }
+    });
+  }
 
   // 탭 전환
   document.querySelectorAll('.checklist-tab').forEach(tab => {
