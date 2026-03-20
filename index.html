@@ -43,7 +43,19 @@
   <!-- ========== 사진 전체보기 모달 ========== -->
   <div class="photo-modal" id="photoModal">
     <button class="photo-modal-close" id="photoModalClose">✕</button>
+    <button class="photo-modal-download" id="photoModalDownload">💾</button>
     <img id="photoModalImg" src="" alt="사진 확대">
+  </div>
+
+  <!-- ========== 사진 선택 액션 시트 ========== -->
+  <div class="action-sheet-modal" id="photoActionSheet">
+    <div class="action-sheet">
+      <div class="action-sheet-header">사진 추가</div>
+      <button class="action-btn" id="btnTakeCamera">📷 카메라로 촬영</button>
+      <button class="action-btn" id="btnChooseGallery">🖼️ 갤러리에서 선택</button>
+      <div class="action-sheet-divider"></div>
+      <button class="action-btn cancel" id="btnCancelActionSheet">취소</button>
+    </div>
   </div>
 
   <!-- ========== 삭제 확인 모달 ========== -->

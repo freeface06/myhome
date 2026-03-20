@@ -194,6 +194,38 @@ input, textarea, button {
   padding: 16px;
   cursor: pointer;
   transition: var(--transition);
+  display: flex;
+  gap: 14px;
+  align-items: stretch;
+}
+
+.house-card-thumb-container {
+  width: 76px;
+  height: 76px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.house-card-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.house-card-thumb.empty {
+  font-size: 2.2rem;
+}
+
+.house-card-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
 .house-card:active {
@@ -522,7 +554,6 @@ input, textarea, button {
 .check-item:active { background: var(--bg-primary); }
 
 .check-item.checked .check-label {
-  text-decoration: line-through;
   color: var(--text-muted);
 }
 
@@ -726,7 +757,7 @@ input, textarea, button {
   right: 16px;
   width: 36px;
   height: 36px;
-  background: #fff;
+  background: rgba(255, 255, 255, 0.9);
   color: var(--text-primary);
   border: none;
   border-radius: var(--radius-full);
@@ -736,6 +767,107 @@ input, textarea, button {
   align-items: center;
   justify-content: center;
   box-shadow: var(--shadow-md);
+}
+
+.photo-modal-download {
+  position: absolute;
+  top: 16px;
+  right: 60px; /* 닫기 버튼 옆 */
+  width: 36px;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--text-primary);
+  border: none;
+  border-radius: var(--radius-full);
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-md);
+  transition: var(--transition);
+}
+
+.photo-modal-download:active {
+  transform: scale(0.9);
+}
+
+/* ========================================
+   액션 시트 (Action Sheet)
+   ======================================== */
+.action-sheet-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: var(--bg-overlay);
+  z-index: 400;
+  align-items: flex-end; /* 하단 정렬 */
+  padding: 16px;
+}
+
+.action-sheet-modal.active {
+  display: flex;
+  animation: fadeInOverlay 0.2s ease forwards;
+}
+
+@keyframes fadeInOverlay {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.action-sheet {
+  width: 100%;
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  padding-bottom: env(safe-area-inset-bottom, 0); /* 아이폰 하단 홈바 대응 */
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.action-sheet-header {
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  padding: 16px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-card-hover);
+}
+
+.action-btn {
+  width: 100%;
+  background: #fff;
+  border: none;
+  padding: 16px;
+  font-size: 1.05rem;
+  font-weight: 500;
+  color: var(--accent);
+  cursor: pointer;
+  text-align: center;
+  transition: var(--transition);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.action-btn:last-child {
+  border-bottom: none;
+}
+
+.action-btn:active {
+  background: var(--bg-input);
+}
+
+.action-sheet-divider {
+  height: 8px;
+  background: var(--border-light);
+}
+
+.action-btn.cancel {
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
 /* ========================================
