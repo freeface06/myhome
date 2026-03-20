@@ -1,47 +1,85 @@
 /**
  * 전세집 체크리스트 앱 - 핵심 로직
- * localStorage 기반 데이터 저장, SPA 뷰 전환, 체크리스트/사진/점수 관리
+ * Firebase Firestore + Storage 기반, SPA 뷰 전환, 체크리스트/사진/점수 관리
  */
+
+// ========================================
+// Firebase 초기화
+// ========================================
+const firebaseConfig = {
+  apiKey: "AIzaSyBK31jjkurTJ0_4eIv28_xMJ3T08kgVCNw",
+  authDomain: "myhome-a0d2a.firebaseapp.com",
+  projectId: "myhome-a0d2a",
+  storageBucket: "myhome-a0d2a.firebasestorage.app",
+  messagingSenderId: "362610937268",
+  appId: "1:362610937268:web:14908e5dd07865198276e1"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const storageRef = firebase.storage();
 
 // ========================================
 // 상수 및 전역 상태
 // ========================================
-const STORAGE_KEY = 'myhome_houses';
 const SVG_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
 const SVG_CAMERA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>';
-const CIRCUMFERENCE = 2 * Math.PI * 36; // 원형 프로그레스바 둘레
+const CIRCUMFERENCE = 2 * Math.PI * 36;
 
 let appState = {
   houses: [],
   currentHouseId: null,
-  currentTab: 'visit',     // 'visit' 또는 'contract'
-  defaultChecklist: null,   // data.json에서 로드
-  deleteTargetId: null
+  currentTab: 'visit',
+  defaultChecklist: null,
+  deleteTargetId: null,
+  unsubscribe: null       // Firestore 실시간 리스너 해제 함수
 };
 
 // ========================================
-// 데이터 관리 (localStorage)
+// 데이터 관리 (Firebase Firestore)
 // ========================================
 
-/** localStorage에서 집 목록 로드 */
-function loadHouses() {
-  try {
-    const data = localStorage.getItem(STORAGE_KEY);
-    return data ? JSON.parse(data) : [];
-  } catch (e) {
-    console.error('데이터 로드 실패:', e);
-    return [];
-  }
+/** Firestore에서 집 목록 실시간 동기화 시작 */
+function listenToHouses(callback) {
+  return db.collection('houses').orderBy('createdAt', 'desc').onSnapshot(
+    snapshot => {
+      appState.houses = snapshot.docs.map(doc => doc.data());
+      if (callback) callback();
+    },
+    error => {
+      console.error('Firestore 동기화 실패:', error);
+      showToast('⚠️ 데이터 동기화 실패');
+    }
+  );
 }
 
-/** localStorage에 집 목록 저장 */
+/** Firestore에 개별 집 저장 */
+function saveHouse(house) {
+  house.updatedAt = new Date().toISOString();
+  db.collection('houses').doc(house.id).set(house)
+    .catch(e => {
+      console.error('저장 실패:', e);
+      showToast('⚠️ 저장 실패');
+    });
+}
+
+/** 호환성 유지: 기존 saveHouses() 호출을 현재 집만 저장하도록 래핑 */
 function saveHouses() {
+  const house = getCurrentHouse();
+  if (house) saveHouse(house);
+}
+
+/** Firestore에서 집 삭제 + Storage 사진 정리 */
+async function deleteHouseFromDB(houseId) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(appState.houses));
+    // Storage에서 해당 집의 모든 사진 삭제
+    const listResult = await storageRef.ref(`houses/${houseId}`).listAll();
+    await Promise.all(listResult.items.map(item => item.delete()));
   } catch (e) {
-    console.error('데이터 저장 실패:', e);
-    showToast('⚠️ 저장 용량 초과! 사진을 줄여주세요.');
+    // Storage 폴더가 없을 수 있음 (사진이 없는 경우)
+    console.warn('Storage 정리:', e.message);
   }
+  // Firestore 문서 삭제
+  await db.collection('houses').doc(houseId).delete();
 }
 
 /**
@@ -61,7 +99,8 @@ const DEFAULT_CHECKLIST_DATA = {
       { name: '교통', icon: '🚇', items: ['지하철역 도보 거리','버스정류장 접근성','주차 가능 여부 (공간 넉넉한지)','자전거 보관소','택시 접근성'] },
       { name: '주변환경', icon: '🏪', items: ['편의점/마트 거리','병원/약국 접근성','공원/산책로 유무','학교/학원가','음식점/카페 밀집'] },
       { name: '건물상태', icon: '🏢', items: ['엘리베이터 유무/상태','복도/계단 청결도','건물 연식 확인','쓰레기 분리수거장','택배 보관함 유무'] },
-      { name: '관리비', icon: '💰', items: ['월 관리비 금액 확인','관리비 포함 항목 (수도/인터넷/TV/청소비 등)','별도 납부 항목 확인 (전기/가스 등)'] }
+      { name: '관리비', icon: '💰', items: ['월 관리비 금액 확인','관리비 포함 항목 (수도/인터넷/TV/청소비 등)','별도 납부 항목 확인 (전기/가스 등)'] },
+      { name: '입주 조건', icon: '📋', items: ['반려동물 가능 여부','주차 가능 여부'] }
     ]
   },
   contract: {
@@ -344,19 +383,7 @@ function renderDetailView() {
       <div class="checklist-section">
         ${renderCategories(house, 'visit')}
       </div>
-      <div class="add-category-section">
-        <button class="add-category-btn" id="addCategoryVisitBtn">＋ 카테고리 추가</button>
-        <div class="add-category-form" id="addCategoryVisitForm">
-          <div class="form-row">
-            <input type="text" class="emoji-input" id="newCatVisitIcon" placeholder="🔍" maxlength="2">
-            <input type="text" id="newCatVisitName" placeholder="카테고리 이름">
-          </div>
-          <div class="form-row form-actions">
-            <button class="form-cancel-btn" id="cancelCatVisit">취소</button>
-            <button class="form-save-btn" id="saveCatVisit">추가</button>
-          </div>
-        </div>
-      </div>
+
     </div>
 
     <!-- 계약 체크리스트 -->
@@ -364,19 +391,7 @@ function renderDetailView() {
       <div class="checklist-section">
         ${renderCategories(house, 'contract')}
       </div>
-      <div class="add-category-section">
-        <button class="add-category-btn" id="addCategoryContractBtn">＋ 카테고리 추가</button>
-        <div class="add-category-form" id="addCategoryContractForm">
-          <div class="form-row">
-            <input type="text" class="emoji-input" id="newCatContractIcon" placeholder="🔍" maxlength="2">
-            <input type="text" id="newCatContractName" placeholder="카테고리 이름">
-          </div>
-          <div class="form-row form-actions">
-            <button class="form-cancel-btn" id="cancelCatContract">취소</button>
-            <button class="form-save-btn" id="saveCatContract">추가</button>
-          </div>
-        </div>
-      </div>
+
     </div>
 
     <!-- 사진 섹션 -->
@@ -582,13 +597,25 @@ function bindDetailEvents() {
     });
   });
 
-  // 사진 삭제
+  // 사진 삭제 (Storage에서도 삭제)
   document.querySelectorAll('.photo-delete').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+    btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const idx = parseInt(btn.dataset.index);
+      const photoUrl = house.photos[idx];
+
+      // Firebase Storage에서 삭제 시도
+      if (photoUrl && photoUrl.includes('firebasestorage')) {
+        try {
+          const photoRef = storageRef.refFromURL(photoUrl);
+          await photoRef.delete();
+        } catch (err) {
+          console.warn('Storage 삭제:', err.message);
+        }
+      }
+
       house.photos.splice(idx, 1);
-      saveHouses();
+      saveHouse(house);
       renderDetailView();
       showToast('사진이 삭제되었습니다');
     });
@@ -705,61 +732,69 @@ function updateCategoryCounts(house) {
 // 사진 업로드
 // ========================================
 
-function handlePhotoUpload(e) {
+async function handlePhotoUpload(e) {
   const house = getCurrentHouse();
   if (!house) return;
 
   const files = Array.from(e.target.files);
   if (files.length === 0) return;
 
-  let processed = 0;
-  const totalFiles = files.length;
+  showToast(`📷 ${files.length}장 업로드 중...`);
 
-  files.forEach(file => {
-    // 이미지 리사이징 후 Base64 변환 (최대 800px)
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      resizeImage(event.target.result, 800, (resizedDataUrl) => {
-        house.photos.push(resizedDataUrl);
-        processed++;
-        if (processed === totalFiles) {
-          house.updatedAt = new Date().toISOString();
-          saveHouses();
-          renderDetailView();
-          showToast(`📷 ${totalFiles}장 추가 완료`);
-        }
-      });
-    };
-    reader.readAsDataURL(file);
-  });
+  for (const file of files) {
+    try {
+      // 이미지 리사이징 → Blob 변환
+      const blob = await resizeImageToBlob(file, 800);
+      // Firebase Storage에 업로드
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}.jpg`;
+      const ref = storageRef.ref(`houses/${house.id}/${fileName}`);
+      await ref.put(blob, { contentType: 'image/jpeg' });
+      // 다운로드 URL 획득 후 photos 배열에 추가
+      const url = await ref.getDownloadURL();
+      house.photos.push(url);
+    } catch (err) {
+      console.error('사진 업로드 실패:', err);
+      showToast('⚠️ 사진 업로드 실패');
+    }
+  }
 
-  // input 초기화 (같은 파일 재선택 가능하게)
+  house.updatedAt = new Date().toISOString();
+  saveHouse(house);
+  renderDetailView();
+  showToast(`📷 ${files.length}장 업로드 완료`);
+
+  // input 초기화
   e.target.value = '';
 }
 
-/** 이미지 리사이징 (저장 용량 절약) */
-function resizeImage(dataUrl, maxSize, callback) {
-  const img = new Image();
-  img.onload = () => {
-    let w = img.width;
-    let h = img.height;
-    if (w > maxSize || h > maxSize) {
-      if (w > h) {
-        h = Math.round((h * maxSize) / w);
-        w = maxSize;
-      } else {
-        w = Math.round((w * maxSize) / h);
-        h = maxSize;
-      }
-    }
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0, w, h);
-    callback(canvas.toDataURL('image/jpeg', 0.7));
-  };
-  img.src = dataUrl;
+/** 이미지 리사이징 → Blob 반환 (Firebase Storage 업로드용) */
+function resizeImageToBlob(file, maxSize) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width;
+        let h = img.height;
+        if (w > maxSize || h > maxSize) {
+          if (w > h) {
+            h = Math.round((h * maxSize) / w);
+            w = maxSize;
+          } else {
+            w = Math.round((w * maxSize) / h);
+            h = maxSize;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.7);
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 // ========================================
@@ -813,10 +848,10 @@ function initModals() {
     appState.deleteTargetId = null;
   });
 
-  document.getElementById('confirmDelete').addEventListener('click', () => {
+  document.getElementById('confirmDelete').addEventListener('click', async () => {
     if (appState.deleteTargetId) {
-      appState.houses = appState.houses.filter(h => h.id !== appState.deleteTargetId);
-      saveHouses();
+      showToast('삭제 중...');
+      await deleteHouseFromDB(appState.deleteTargetId);
       document.getElementById('confirmModal').classList.remove('active');
       appState.deleteTargetId = null;
       showToast('🗑️ 삭제되었습니다');
@@ -841,7 +876,7 @@ function initFAB() {
   document.getElementById('fabBtn').addEventListener('click', () => {
     const newHouse = createHouse();
     appState.houses.push(newHouse);
-    saveHouses();
+    saveHouse(newHouse);
     showDetailView(newHouse.id);
     showToast('🏠 새 집이 추가되었습니다');
 
@@ -861,12 +896,17 @@ async function initApp() {
   // 기본 체크리스트 템플릿 로드
   await loadDefaultChecklist();
 
-  // 저장된 데이터 로드
-  appState.houses = loadHouses();
-
   // UI 초기화
   initModals();
   initFAB();
+
+  // Firestore 실시간 동기화 시작 (데이터 변경 시 자동 갱신)
+  appState.unsubscribe = listenToHouses(() => {
+    // 목록 화면이면 목록 갱신, 상세 화면이면 유지
+    if (!appState.currentHouseId) {
+      renderHouseList();
+    }
+  });
 
   // 첫 화면 렌더
   showListView();
