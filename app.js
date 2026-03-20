@@ -104,20 +104,8 @@ let appState = {
 };
 
 // ========================================
-// 데이터 관리 (Firestore + localStorage 하이브리드)
+// 데이터 관리 (Supabase)
 // ========================================
-
-const STORAGE_KEY = 'appState_houses';
-
-/** 로컬 캐시에서 로드 (동기식 fallback용, localForage 로드 전 화면 용도) */
-function loadFromLocalCache() {
-  try {
-    const data = localStorage.getItem(STORAGE_KEY);
-    return data ? JSON.parse(data) : [];
-  } catch (e) {
-    return [];
-  }
-}
 
 /** Supabase에서 데이터 로드 시작 */
 async function loadHousesFromDB(callback) {
@@ -140,10 +128,8 @@ async function loadHousesFromDB(callback) {
         createdAt: row.created_at,
         updatedAt: row.updated_at
       }));
-      // 빠른 로딩용 로컬스토리지 캐싱
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(appState.houses));
     } else {
-      appState.houses = loadFromLocalCache(); // data 빈 배열이면 fallback
+      appState.houses = []; // 캐시 폴백 없이 무조건 DB 값만 로드 (빈 배열)
     }
     
     // 데이터 로드 성공 후 실시간 동기화 채널 열기
@@ -152,18 +138,15 @@ async function loadHousesFromDB(callback) {
     if (callback) callback();
   } catch (error) {
     console.error('클라우드 동기화 실패:', error);
-    appState.houses = loadFromLocalCache();
+    appState.houses = [];
     if (callback) callback();
-    showToast('⚠️ 클라우드 데이터 로드 실패. 오프라인 모드로 동작합니다.');
+    showToast('⚠️ 데이터 로드에 실패했습니다. DB 환경을 확인해주세요.');
   }
 }
 
 /** Supabase에 개별 집 갱신 및 저장 */
 async function saveHouse(house) {
   house.updatedAt = new Date().toISOString();
-  
-  // 빠른 UI 반응을 위해 로컬 캐시 우선 저장
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(appState.houses));
   
   try {
     const { error } = await supabaseClient
@@ -196,9 +179,7 @@ function saveHouses() {
 /** 집 데이터 완전 삭제 (Supabase) */
 async function deleteHouseFromDB(houseId) {
   const houseToDelete = appState.houses.find(h => h.id === houseId);
-  // 1. 로컬 상태에서 즉시 제거
   appState.houses = appState.houses.filter(h => h.id !== houseId);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(appState.houses));
   
   try {
     // 2. 해당 집의 이미지들이 스토리지에 있다면 파일 삭제
