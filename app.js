@@ -900,11 +900,29 @@ async function initApp() {
   initModals();
   initFAB();
 
-  // Firestore 실시간 동기화 시작 (데이터 변경 시 자동 갱신)
+  // Firestore 실시간 동기화 시작 (여러 기기에서 변경 시 자동 갱신)
   appState.unsubscribe = listenToHouses(() => {
-    // 목록 화면이면 목록 갱신, 상세 화면이면 유지
     if (!appState.currentHouseId) {
+      // 목록 화면 → 목록 갱신
       renderHouseList();
+    } else {
+      // 상세 화면 → 현재 보고 있는 집의 데이터가 변경되었으면 반영
+      const house = getCurrentHouse();
+      if (!house) {
+        // 다른 기기에서 삭제된 경우
+        showToast('이 집이 다른 기기에서 삭제되었습니다');
+        showListView();
+        return;
+      }
+      // 점수/카운트 실시간 업데이트 (깜빡임 없이)
+      updateScoreUI(house);
+      updateCategoryCounts(house);
+      // 현재 포커스된 입력 필드가 아닌 경우에만 전체 재렌더링
+      const activeEl = document.activeElement;
+      const isTyping = activeEl && (activeEl.id === 'titleInput' || activeEl.id === 'memoInput' || activeEl.classList.contains('add-item-input'));
+      if (!isTyping) {
+        renderDetailView();
+      }
     }
   });
 
