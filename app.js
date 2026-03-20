@@ -393,7 +393,7 @@ function renderHeader(view) {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
         목록
       </button>
-      <div style="width:24px"></div>
+      <button class="header-delete" id="headerDeleteBtn">삭제</button>
     `;
     document.getElementById('backBtn').addEventListener('click', () => {
       appState.isEditMode = false;
@@ -401,6 +401,13 @@ function renderHeader(view) {
         history.back();
       } else {
         showListView();
+      }
+    });
+    document.getElementById('headerDeleteBtn').addEventListener('click', () => {
+      const house = getCurrentHouse();
+      if (house) {
+        appState.deleteTargetId = house.id;
+        document.getElementById('confirmModal').classList.add('active');
       }
     });
   }
@@ -500,7 +507,7 @@ function renderDetailView() {
   const displayStyle = appState.isEditMode ? '' : 'style="display:none;"';
 
   container.innerHTML = `
-    <!-- 제목 및 수정/삭제 버튼 -->
+    <!-- 제목 및 수정 버튼 -->
     <div class="title-section">
       <div class="title-input-wrapper">
         <input type="text" class="title-input" id="titleInput" 
@@ -508,7 +515,6 @@ function renderDetailView() {
                placeholder="집 이름을 입력하세요 (예: 역삼역 5분 투룸)" ${readOnlyAttr}>
         <div class="title-actions">
           <button class="action-btn-small" id="titleEditBtn">${appState.isEditMode ? '저장' : '수정'}</button>
-          <button class="action-btn-small delete" id="titleDeleteBtn">삭제</button>
         </div>
       </div>
     </div>
@@ -650,12 +656,6 @@ function bindDetailEvents() {
     }
   });
 
-  // 삭제 버튼 (원래 맨 밑에 있던 것을 제목 옆으로 이동)
-  document.getElementById('titleDeleteBtn').addEventListener('click', () => {
-    appState.deleteTargetId = house.id;
-    document.getElementById('confirmModal').classList.add('active');
-  });
-
   // 탭 전환
   document.querySelectorAll('.checklist-tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -760,7 +760,7 @@ function bindDetailEvents() {
     house.updatedAt = new Date().toISOString();
   });
 
-  // 삭제 버튼 로직은 위쪽 titleDeleteBtn으로 이동됨
+  // 삭제 버튼 로직은 헤더로 이동됨
 }
 
 /** 카테고리 추가 폼 바인딩 */

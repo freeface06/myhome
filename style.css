@@ -130,6 +130,21 @@ input, textarea, button {
   height: 20px;
 }
 
+.header-delete {
+  background: none;
+  color: var(--accent-red);
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  transition: var(--transition);
+}
+
+.header-delete:active {
+  background: #ff3b301a;
+}
+
 /* ========================================
    뷰 전환
    ======================================== */
@@ -371,15 +386,6 @@ input, textarea, button {
 .action-btn-small:active {
   transform: scale(0.95);
   background: var(--border);
-}
-
-.action-btn-small.delete {
-  background: #ff3b301a;
-  color: var(--accent-red);
-}
-
-.action-btn-small.delete:active {
-  background: #ff3b3033;
 }
 
 .title-input::placeholder {
