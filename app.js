@@ -562,10 +562,10 @@ function renderDetailView() {
         ${house.photos.map((photo, i) => `
           <div class="photo-cell" data-index="${i}">
             <img src="${photo}" alt="사진 ${i + 1}" loading="lazy">
-            <button class="photo-delete" data-index="${i}" ${displayStyle}>✕</button>
+            <button class="photo-delete" data-index="${i}">✕</button>
           </div>
         `).join('')}
-        <div class="photo-add" id="photoAddBtn" ${displayStyle}>
+        <div class="photo-add" id="photoAddBtn">
           ${SVG_CAMERA}
           <span>사진 추가</span>
         </div>
