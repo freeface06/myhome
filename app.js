@@ -45,7 +45,11 @@ function setupRealtimeSubscription() {
           if (appState.lastSavedAt && appState.lastSavedHouseId === houseData.id && (Date.now() - appState.lastSavedAt < 2000)) {
             isEcho = true;
           }
-          appState.houses[existingIdx] = houseData;
+          
+          if (!isEcho) {
+            // 기존 객체의 참조를 유지한 채 값만 병합
+            Object.assign(appState.houses[existingIdx], houseData);
+          }
         } else {
           appState.houses.unshift(houseData);
         }
