@@ -35,34 +35,63 @@ let appState = {
 };
 
 // ========================================
-// 데이터 관리 (Firebase Firestore)
+// 데이터 관리 (Firestore + localStorage 하이브리드)
 // ========================================
 
-/** Firestore에서 집 목록 실시간 동기화 시작 */
+const LOCAL_CACHE_KEY = 'myhome_houses';
+
+/** localStorage 캐시에 저장 (새로고침 시 즉시 로드용) */
+function saveToLocalCache() {
+  try {
+    localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(appState.houses));
+  } catch (e) {
+    console.warn('로컬 캐시 저장 실패:', e.message);
+  }
+}
+
+/** localStorage 캐시에서 로드 (Firestore 동기화 전 초기 데이터) */
+function loadFromLocalCache() {
+  try {
+    const data = localStorage.getItem(LOCAL_CACHE_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+/** Firestore 실시간 동기화 시작 */
 function listenToHouses(callback) {
   return db.collection('houses').orderBy('createdAt', 'desc').onSnapshot(
     snapshot => {
       appState.houses = snapshot.docs.map(doc => doc.data());
+      saveToLocalCache(); // 로컬 캐시에도 동기화
       if (callback) callback();
     },
     error => {
-      console.error('Firestore 동기화 실패:', error);
-      showToast('⚠️ 데이터 동기화 실패');
+      console.error('Firestore 동기화 실패:', error.code, error.message);
+      // Firestore 실패 시 로컬 캐시에서 복원
+      if (appState.houses.length === 0) {
+        appState.houses = loadFromLocalCache();
+        if (callback) callback();
+        showToast('⚠️ 오프라인 모드 (로컬 데이터 사용)');
+      }
     }
   );
 }
 
-/** Firestore에 개별 집 저장 */
+/** Firestore에 개별 집 저장 + 로컬 캐시 동기화 */
 function saveHouse(house) {
   house.updatedAt = new Date().toISOString();
+  saveToLocalCache(); // 즉시 로컬에 저장 (새로고침 대비)
   db.collection('houses').doc(house.id).set(house)
+    .then(() => console.log('✅ Firestore 저장 완료:', house.id))
     .catch(e => {
-      console.error('저장 실패:', e);
-      showToast('⚠️ 저장 실패');
+      console.error('❌ Firestore 저장 실패:', e.code, e.message);
+      showToast('⚠️ 클라우드 저장 실패 (로컬에는 저장됨)');
     });
 }
 
-/** 호환성 유지: 기존 saveHouses() 호출을 현재 집만 저장하도록 래핑 */
+/** 호환성 유지: 기존 saveHouses() 호출 래핑 */
 function saveHouses() {
   const house = getCurrentHouse();
   if (house) saveHouse(house);
@@ -70,15 +99,16 @@ function saveHouses() {
 
 /** Firestore에서 집 삭제 + Storage 사진 정리 */
 async function deleteHouseFromDB(houseId) {
+  // 로컬에서 먼저 제거
+  appState.houses = appState.houses.filter(h => h.id !== houseId);
+  saveToLocalCache();
+
   try {
-    // Storage에서 해당 집의 모든 사진 삭제
     const listResult = await storageRef.ref(`houses/${houseId}`).listAll();
     await Promise.all(listResult.items.map(item => item.delete()));
   } catch (e) {
-    // Storage 폴더가 없을 수 있음 (사진이 없는 경우)
     console.warn('Storage 정리:', e.message);
   }
-  // Firestore 문서 삭제
   await db.collection('houses').doc(houseId).delete();
 }
 
