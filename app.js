@@ -775,6 +775,44 @@ function bindDetailEvents() {
       toolbar: false,
       navbar: false
     });
+
+    // 모바일 환경 좌우 스와이프 네비게이션 적용
+    const viewerElem = appState.viewer.viewer;
+    if (viewerElem) {
+      let touchStartX = 0;
+      let touchStartY = 0;
+
+      viewerElem.addEventListener('touchstart', e => {
+        touchStartX = e.changedTouches[0].screenX;
+        touchStartY = e.changedTouches[0].screenY;
+      }, { passive: true });
+
+      viewerElem.addEventListener('touchend', e => {
+        const touchEndX = e.changedTouches[0].screenX;
+        const touchEndY = e.changedTouches[0].screenY;
+        
+        const swipeThreshold = 50;
+        const diffX = touchStartX - touchEndX;
+        const diffY = touchStartY - touchEndY;
+
+        // 세로 스크롤보다 가로 스와이프가 크고 임계값을 넘었을 때
+        if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > swipeThreshold) {
+          const imageData = appState.viewer.imageData;
+          const initialImageData = appState.viewer.initialImageData;
+          
+          // 사진이 확대되지 않은 상태일 때만 슬라이드 전환 (오차 범위 1% 허용)
+          const isZoomed = imageData && initialImageData && (imageData.ratio > initialImageData.ratio + 0.01);
+          
+          if (!isZoomed) {
+            if (diffX > 0) {
+              appState.viewer.next(); // 왼쪽으로 스와이프 => 다음 사진
+            } else {
+              appState.viewer.prev(); // 오른쪽으로 스와이프 => 이전 사진
+            }
+          }
+        }
+      }, { passive: true });
+    }
   }
 
   // 전체 사진 저장 (개별 파일 순차 다운로드)
