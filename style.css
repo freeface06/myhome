@@ -219,6 +219,9 @@ input, textarea, button {
 
 .house-card-thumb.empty {
   font-size: 2.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .house-card-content {
@@ -327,10 +330,15 @@ input, textarea, button {
   margin-bottom: 16px;
 }
 
-.title-input-wrapper { position: relative; }
+.title-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
 
 .title-input {
-  width: 100%;
+  flex: 1;
   background: var(--bg-input);
   border: 1.5px solid transparent;
   border-radius: var(--radius-md);
@@ -339,6 +347,38 @@ input, textarea, button {
   font-weight: 600;
   color: var(--text-primary);
   transition: var(--transition);
+}
+
+.title-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.action-btn-small {
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.action-btn-small:active {
+  transform: scale(0.95);
+  background: var(--border);
+}
+
+.action-btn-small.delete {
+  background: #ff3b301a;
+  color: var(--accent-red);
+}
+
+.action-btn-small.delete:active {
+  background: #ff3b3033;
 }
 
 .title-input::placeholder {

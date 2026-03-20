@@ -40,8 +40,9 @@ function setupRealtimeSubscription() {
         let isEcho = false;
 
         if (existingIdx >= 0) {
-          // 수신된 업데이트 내용이 이미 내가 화면 상에서 임포트한 상태와 완전 일치하는 경우(메아리)
-          if (JSON.stringify(appState.houses[existingIdx]) === JSON.stringify(houseData)) {
+          // 수신된 업데이트 내용이 직전의 내 저장 액션에 의한 에코인지 검사(2초 이내)
+          // (JSON.stringify는 서버가 Timestamp나 JSON 키 순서를 바꿀 시 오작동하여 깜빡임을 발생시킴)
+          if (appState.lastSavedAt && appState.lastSavedHouseId === houseData.id && (Date.now() - appState.lastSavedAt < 2000)) {
             isEcho = true;
           }
           appState.houses[existingIdx] = houseData;
@@ -152,9 +153,11 @@ async function loadHousesFromDB(callback) {
   }
 }
 
-/** Supabase에 개별 집 갱신 및 저장 */
 async function saveHouse(house) {
   house.updatedAt = new Date().toISOString();
+  
+  appState.lastSavedAt = Date.now();
+  appState.lastSavedHouseId = house.id;
   
   try {
     const { error } = await supabaseClient
@@ -323,21 +326,12 @@ function calcScore(house, type) {
   return total === 0 ? 0 : Math.round((checked / total) * 100);
 }
 
-/** 종합 점수: 방문(70%) + 계약(30%) 가중 평균 */
+/** 종합 점수: 방문(100%) 점수만 사용 */
 function calcTotalScore(house) {
   const visitScore = calcScore(house, 'visit');
-  const contractScore = calcScore(house, 'contract');
   const visitTotal = house.visit.categories.reduce((s, c) => s + c.items.length, 0);
-  const contractTotal = house.contract.categories.reduce((s, c) => s + c.items.length, 0);
-
-  // 항목이 없으면 0점
-  if (visitTotal + contractTotal === 0) return 0;
-
-  // 한쪽만 항목이 있으면 해당 점수만 반환
-  if (contractTotal === 0) return visitScore;
-  if (visitTotal === 0) return contractScore;
-
-  return Math.round(visitScore * 0.7 + contractScore * 0.3);
+  if (visitTotal === 0) return 0;
+  return visitScore;
 }
 
 /** 점수에 따른 등급 */
@@ -351,16 +345,20 @@ function getScoreClass(score) {
 // 뷰 전환
 // ========================================
 
-function showListView() {
+function showListView(isPopState = false) {
   appState.currentHouseId = null;
   document.getElementById('listView').classList.add('active');
   document.getElementById('detailView').classList.remove('active');
   document.getElementById('fabBtn').classList.remove('hidden');
   renderHeader('list');
   renderHouseList();
+
+  if (!isPopState) {
+    history.pushState({ view: 'list' }, '', window.location.pathname);
+  }
 }
 
-function showDetailView(houseId) {
+function showDetailView(houseId, isPopState = false) {
   appState.currentHouseId = houseId;
   appState.currentTab = 'visit';
   appState.isEditMode = false;
@@ -369,6 +367,10 @@ function showDetailView(houseId) {
   document.getElementById('fabBtn').classList.add('hidden');
   renderHeader('detail');
   renderDetailView();
+
+  if (!isPopState) {
+    history.pushState({ view: 'detail', id: houseId }, '', '#detail');
+  }
 }
 
 // ========================================
@@ -386,33 +388,19 @@ function renderHeader(view) {
       <span style="font-size:0.8rem;color:var(--text-muted)">${appState.houses.length}건</span>
     `;
   } else {
-    const editBtnText = appState.isEditMode ? '저장' : '수정';
     el.innerHTML = `
       <button class="header-back" id="backBtn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
         목록
       </button>
-      <button class="header-action" id="editBtn" style="font-weight:600; color:var(--accent); background:none; font-size:0.95rem; cursor:pointer;">${editBtnText}</button>
+      <div style="width:24px"></div>
     `;
     document.getElementById('backBtn').addEventListener('click', () => {
       appState.isEditMode = false;
-      showListView();
-    });
-    document.getElementById('editBtn').addEventListener('click', () => {
-      if (appState.isEditMode) {
-        appState.isEditMode = false;
-        saveHouses();
-        renderHeader('detail');
-        renderDetailView();
-        showToast('💾 저장되었습니다.');
+      if (history.state && history.state.view === 'detail') {
+        history.back();
       } else {
-        appState.isEditMode = true;
-        renderHeader('detail');
-        renderDetailView();
-        setTimeout(() => {
-          const titleInput = document.getElementById('titleInput');
-          if (titleInput) titleInput.focus();
-        }, 100);
+        showListView();
       }
     });
   }
@@ -512,12 +500,16 @@ function renderDetailView() {
   const displayStyle = appState.isEditMode ? '' : 'style="display:none;"';
 
   container.innerHTML = `
-    <!-- 제목 -->
+    <!-- 제목 및 수정/삭제 버튼 -->
     <div class="title-section">
       <div class="title-input-wrapper">
         <input type="text" class="title-input" id="titleInput" 
                value="${escapeHtml(house.title)}" 
                placeholder="집 이름을 입력하세요 (예: 역삼역 5분 투룸)" ${readOnlyAttr}>
+        <div class="title-actions">
+          <button class="action-btn-small" id="titleEditBtn">${appState.isEditMode ? '저장' : '수정'}</button>
+          <button class="action-btn-small delete" id="titleDeleteBtn">삭제</button>
+        </div>
       </div>
     </div>
 
@@ -534,7 +526,7 @@ function renderDetailView() {
       </div>
       <div class="score-details">
         <h3>종합 점수</h3>
-        <p>🏠 방문: ${visitScore}점 · 📋 계약: ${contractScore}점</p>
+        <p>🏠 방문: ${visitScore}점</p>
       </div>
     </div>
 
@@ -577,8 +569,8 @@ function renderDetailView() {
           ${SVG_CAMERA}
           <span>사진 추가</span>
         </div>
-      </div>
-      <input type="file" id="photoInput" accept="image/*" capture="environment" multiple hidden>
+      <input type="file" id="photoInputCamera" accept="image/*" capture="environment" multiple hidden>
+      <input type="file" id="photoInputGallery" accept="image/*" multiple hidden>
     </div>
 
     <!-- 메모 -->
@@ -589,10 +581,7 @@ function renderDetailView() {
       <textarea class="memo-textarea" id="memoInput" placeholder="${appState.isEditMode ? '추가 메모를 남겨보세요...' : ''}" ${readOnlyAttr}>${escapeHtml(house.memo)}</textarea>
     </div>
 
-    <!-- 삭제 -->
-    <div class="danger-zone" ${displayStyle}>
-      <button class="delete-house-btn" id="deleteHouseBtn">🗑️ 이 집 삭제하기</button>
-    </div>
+    <!-- 기존 맨 아래 삭제 섹션은 상단으로 이동했으므로 제거 -->
   `;
 
   // 이벤트 바인딩
@@ -640,6 +629,31 @@ function bindDetailEvents() {
   titleInput.addEventListener('input', () => {
     house.title = titleInput.value.trim();
     house.updatedAt = new Date().toISOString();
+  });
+
+  // 수정/저장 버튼
+  document.getElementById('titleEditBtn').addEventListener('click', () => {
+    if (appState.isEditMode) {
+      appState.isEditMode = false;
+      saveHouses();
+      renderHeader('detail');
+      renderDetailView();
+      showToast('💾 저장되었습니다.');
+    } else {
+      appState.isEditMode = true;
+      renderHeader('detail');
+      renderDetailView();
+      setTimeout(() => {
+        const input = document.getElementById('titleInput');
+        if (input) input.focus();
+      }, 100);
+    }
+  });
+
+  // 삭제 버튼 (원래 맨 밑에 있던 것을 제목 옆으로 이동)
+  document.getElementById('titleDeleteBtn').addEventListener('click', () => {
+    appState.deleteTargetId = house.id;
+    document.getElementById('confirmModal').classList.add('active');
   });
 
   // 탭 전환
@@ -695,12 +709,13 @@ function bindDetailEvents() {
     });
   }
 
-  const photoInput = document.getElementById('photoInput');
-  if (photoInput) {
-    photoInput.addEventListener('change', (e) => {
-      document.getElementById('photoActionSheet').classList.remove('active');
-      handlePhotoUpload(e);
-    });
+  const photoInputCamera = document.getElementById('photoInputCamera');
+  if (photoInputCamera) {
+    photoInputCamera.addEventListener('change', (e) => handlePhotoUpload(e));
+  }
+  const photoInputGallery = document.getElementById('photoInputGallery');
+  if (photoInputGallery) {
+    photoInputGallery.addEventListener('change', (e) => handlePhotoUpload(e));
   }
 
   // 사진 클릭 (확대)
@@ -745,11 +760,7 @@ function bindDetailEvents() {
     house.updatedAt = new Date().toISOString();
   });
 
-  // 삭제 버튼
-  document.getElementById('deleteHouseBtn').addEventListener('click', () => {
-    appState.deleteTargetId = house.id;
-    document.getElementById('confirmModal').classList.add('active');
-  });
+  // 삭제 버튼 로직은 위쪽 titleDeleteBtn으로 이동됨
 }
 
 /** 카테고리 추가 폼 바인딩 */
@@ -827,7 +838,7 @@ function updateScoreUI(house) {
     progressCircle.setAttribute('stroke-dashoffset', offset);
   }
   if (scoreDetails) {
-    scoreDetails.innerHTML = `🏠 방문: ${visitScore}점 · 📋 계약: ${contractScore}점`;
+    scoreDetails.innerHTML = `🏠 방문: ${visitScore}점`;
   }
 }
 
@@ -1005,19 +1016,15 @@ function initModals() {
   const actionSheet = document.getElementById('photoActionSheet');
   
   document.getElementById('btnTakeCamera').addEventListener('click', () => {
-    const input = document.getElementById('photoInput');
-    if(input) {
-      input.setAttribute('capture', 'environment');
-      input.click();
-    }
+    document.getElementById('photoActionSheet').classList.remove('active');
+    const input = document.getElementById('photoInputCamera');
+    if (input) input.click();
   });
 
   document.getElementById('btnChooseGallery').addEventListener('click', () => {
-    const input = document.getElementById('photoInput');
-    if(input) {
-      input.removeAttribute('capture');
-      input.click();
-    }
+    document.getElementById('photoActionSheet').classList.remove('active');
+    const input = document.getElementById('photoInputGallery');
+    if (input) input.click();
   });
 
   document.getElementById('btnCancelActionSheet').addEventListener('click', () => {
@@ -1072,13 +1079,10 @@ function initFAB() {
     appState.houses.push(newHouse);
     saveHouse(newHouse);
     
-    appState.currentHouseId = newHouse.id;
-    appState.currentTab = 'visit';
-    appState.isEditMode = true; // 새 집은 강제 편집 모드
-    document.getElementById('listView').classList.remove('active');
-    document.getElementById('detailView').classList.add('active');
-    document.getElementById('fabBtn').classList.add('hidden');
+    showDetailView(newHouse.id);
     
+    // 강제 편집 모드 진입
+    appState.isEditMode = true;
     renderHeader('detail');
     renderDetailView();
     showToast('🏠 새 집이 추가되었습니다');
@@ -1114,8 +1118,19 @@ async function initApp() {
     }
   });
 
-  // 첫 화면 렌더
-  showListView();
+  // 첫 화면 렌더 및 History 초기 상태 등록
+  history.replaceState({ view: 'list' }, '', window.location.pathname);
+  
+  window.addEventListener('popstate', (e) => {
+    // 뒤로가기 발생 시 상태 객체를 확인하여 알맞은 화면으로 분기
+    if (e.state && e.state.view === 'detail') {
+      showDetailView(e.state.id, true);
+    } else {
+      showListView(true);
+    }
+  });
+
+  showListView(true);
 }
 
 // DOM 로드 후 시작
