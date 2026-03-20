@@ -112,7 +112,10 @@ let appState = {
   currentTab: 'visit',
   defaultChecklist: null,
   deleteTargetId: null,
-  isEditMode: false
+  deleteTargetType: null,
+  deletePhotoIndex: null,
+  isEditMode: false,
+  viewer: null
 };
 
 
@@ -410,7 +413,9 @@ function renderHeader(view) {
     document.getElementById('headerDeleteBtn').addEventListener('click', () => {
       const house = getCurrentHouse();
       if (house) {
+        appState.deleteTargetType = 'house';
         appState.deleteTargetId = house.id;
+        document.getElementById('confirmMessage').innerHTML = '이 집 정보를 삭제하시겠습니까?<br>삭제된 데이터는 복구할 수 없습니다.';
         document.getElementById('confirmModal').classList.add('active');
       }
     });
@@ -566,7 +571,10 @@ function renderDetailView() {
     <div class="photo-section">
       <div class="section-header">
         <div class="section-title">📷 사진</div>
-        <span style="font-size:0.8rem;color:var(--text-muted)">${house.photos.length}장</span>
+        <div class="photo-header-actions" style="display:flex; gap:8px; align-items:center;">
+          <span style="font-size:0.8rem;color:var(--text-muted)">${house.photos.length}장</span>
+          ${house.photos.length > 0 ? `<button class="action-btn-small" id="btnDownloadAllPhotos" style="padding:4px 8px; font-size:0.8rem; border-radius:4px; border:1px solid var(--border-color); background:var(--bg-card); color:var(--text-color); cursor:pointer;">🗂️ 전체 저장</button>` : ''}
+        </div>
       </div>
       <div class="photo-grid" id="photoGrid">
         ${house.photos.map((photo, i) => `
@@ -722,38 +730,49 @@ function bindDetailEvents() {
     photoInputGallery.addEventListener('change', (e) => handlePhotoUpload(e));
   }
 
-  // 사진 클릭 (확대)
-  document.querySelectorAll('.photo-cell img').forEach(img => {
-    img.addEventListener('click', () => {
-      document.getElementById('photoModalImg').src = img.src;
-      document.getElementById('photoModal').classList.add('active');
+  // Viewer.js 초기화
+  const photoGrid = document.getElementById('photoGrid');
+  if (photoGrid && house.photos.length > 0) {
+    if (appState.viewer) {
+      appState.viewer.destroy();
+    }
+    appState.viewer = new Viewer(photoGrid, {
+      url: 'src',
+      filter(image) {
+        return image.tagName === 'IMG'; // Add 버튼의 SVG 등은 제외
+      },
+      title: false,
+      toolbar: false,
+      navbar: false
     });
-  });
+  }
 
-  // 사진 삭제
+  // 전체 사진 저장 (개별 파일 순차 다운로드)
+  const btnDownloadAllPhotos = document.getElementById('btnDownloadAllPhotos');
+  if (btnDownloadAllPhotos) {
+    btnDownloadAllPhotos.addEventListener('click', async () => {
+      if (!house.photos || house.photos.length === 0) return;
+      
+      showToast('🗂️ 전체 사진 다운로드를 시작합니다 (다중 팝업 허용 필요)');
+      
+      for (let i = 0; i < house.photos.length; i++) {
+        // 브라우저 환경에서 동시다발적 다운로드를 막는 것을 방지하기 위해 인터벌 부여
+        await downloadSingleImage(house.photos[i]);
+        await new Promise(resolve => setTimeout(resolve, 800));
+      }
+      
+      showToast('✅ 모든 사진 다운로드 요청 완료!');
+    });
+  }
+
+  // 사진 삭제 (커스텀 팝업)
   document.querySelectorAll('.photo-delete').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      const idx = parseInt(btn.dataset.index);
-      
-      const photoUrl = house.photos[idx];
-
-      // IndexedDB(Supabase DB) 데이터 업데이트 수행
-      house.photos.splice(idx, 1);
-      
-      // 스토리지 파일 삭제 (url에서 파일 경로 추출 필요)
-      if (photoUrl && photoUrl.includes('supabase.co/storage/v1/object/public/house-images/')) {
-        const filePath = photoUrl.split('house-images/')[1];
-        try {
-          await supabaseClient.storage.from('house-images').remove([filePath]);
-        } catch (err) {
-          console.warn('스토리지 이미지 삭제 실패:', err);
-        }
-      }
-
-      saveHouse(house);
-      renderDetailView();
-      showToast('사진이 삭제되었습니다');
+      appState.deleteTargetType = 'photo';
+      appState.deletePhotoIndex = parseInt(btn.dataset.index);
+      document.getElementById('confirmMessage').innerHTML = '이 사진을 정말 삭제하시겠습니까?<br>삭제된 데이터는 복구할 수 없습니다.';
+      document.getElementById('confirmModal').classList.add('active');
     });
   });
 
@@ -976,6 +995,27 @@ function debounce(fn, delay) {
   };
 }
 
+/** 개별 이미지 다운로드 */
+async function downloadSingleImage(imgSrc) {
+  if (!imgSrc) return;
+  try {
+    showToast('📥 사진 다운로드 중...');
+    const response = await fetch(imgSrc);
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `house_photo_${Date.now()}.jpg`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error('다운로드 오류:', err);
+    showToast('⚠️ 다운로드에 실패했습니다.');
+  }
+}
+
 /** 토스트 알림 */
 function showToast(message) {
   const toast = document.getElementById('toast');
@@ -989,33 +1029,6 @@ function showToast(message) {
 // ========================================
 
 function initModals() {
-  // 사진 모달 닫기
-  document.getElementById('photoModalClose').addEventListener('click', () => {
-    document.getElementById('photoModal').classList.remove('active');
-  });
-
-  // 사진 다운로드 추가
-  document.getElementById('photoModalDownload').addEventListener('click', async () => {
-    const imgSrc = document.getElementById('photoModalImg').src;
-    if (!imgSrc) return;
-    try {
-      showToast('📥 사진 다운로드 중...');
-      const response = await fetch(imgSrc);
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `house_photo_${Date.now()}.jpg`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error('다운로드 오류:', err);
-      showToast('⚠️ 다운로드에 실패했습니다.');
-    }
-  });
-
   // 사진 액션 시트 이벤트
   const actionSheet = document.getElementById('photoActionSheet');
   
@@ -1041,26 +1054,46 @@ function initModals() {
     }
   });
 
-  document.getElementById('photoModal').addEventListener('click', (e) => {
-    if (e.target === e.currentTarget) {
-      document.getElementById('photoModal').classList.remove('active');
-    }
-  });
-
-  // 삭제 확인 모달
+  // 삭제 확인 모달 (집 & 사진 공용)
   document.getElementById('confirmCancel').addEventListener('click', () => {
     document.getElementById('confirmModal').classList.remove('active');
+    appState.deleteTargetType = null;
     appState.deleteTargetId = null;
+    appState.deletePhotoIndex = null;
   });
 
   document.getElementById('confirmDelete').addEventListener('click', async () => {
-    if (appState.deleteTargetId) {
+    if (appState.deleteTargetType === 'house' && appState.deleteTargetId) {
       showToast('삭제 중...');
       await deleteHouseFromDB(appState.deleteTargetId);
       document.getElementById('confirmModal').classList.remove('active');
+      appState.deleteTargetType = null;
       appState.deleteTargetId = null;
       showToast('🗑️ 삭제되었습니다');
       showListView();
+    } else if (appState.deleteTargetType === 'photo' && appState.deletePhotoIndex !== null) {
+      const house = getCurrentHouse();
+      if (!house) return;
+      const idx = appState.deletePhotoIndex;
+      const photoUrl = house.photos[idx];
+
+      house.photos.splice(idx, 1);
+      
+      if (photoUrl && photoUrl.includes('supabase.co/storage/v1/object/public/house-images/')) {
+        const filePath = photoUrl.split('house-images/')[1];
+        try {
+          await supabaseClient.storage.from('house-images').remove([filePath]);
+        } catch (err) {
+          console.warn('스토리지 이미지 삭제 실패:', err);
+        }
+      }
+
+      saveHouse(house);
+      renderDetailView();
+      document.getElementById('confirmModal').classList.remove('active');
+      appState.deleteTargetType = null;
+      appState.deletePhotoIndex = null;
+      showToast('사진이 삭제되었습니다');
     }
   });
 
@@ -1068,7 +1101,9 @@ function initModals() {
   document.getElementById('confirmModal').addEventListener('click', (e) => {
     if (e.target === e.currentTarget) {
       document.getElementById('confirmModal').classList.remove('active');
+      appState.deleteTargetType = null;
       appState.deleteTargetId = null;
+      appState.deletePhotoIndex = null;
     }
   });
 }

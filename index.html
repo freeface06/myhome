@@ -11,6 +11,9 @@
   <title>전세집 체크리스트</title>
   <link rel="stylesheet" href="style.css">
 
+  <!-- Viewer.js CSS -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/viewerjs/1.11.3/viewer.min.css">
+
   <!-- Supabase -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -40,12 +43,7 @@
   <!-- ========== 플로팅 추가 버튼 ========== -->
   <button class="fab" id="fabBtn" title="새 집 추가">＋</button>
 
-  <!-- ========== 사진 전체보기 모달 ========== -->
-  <div class="photo-modal" id="photoModal">
-    <button class="photo-modal-close" id="photoModalClose">✕</button>
-    <button class="photo-modal-download" id="photoModalDownload">💾</button>
-    <img id="photoModalImg" src="" alt="사진 확대">
-  </div>
+
 
   <!-- ========== 사진 선택 액션 시트 ========== -->
   <div class="action-sheet-modal" id="photoActionSheet">
@@ -82,6 +80,9 @@
       </linearGradient>
     </defs>
   </svg>
+
+  <!-- Viewer.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/viewerjs/1.11.3/viewer.min.js"></script>
 
   <script src="app.js"></script>
 </body>
