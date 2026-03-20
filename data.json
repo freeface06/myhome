@@ -6,9 +6,9 @@
         "name": "전/월세",
         "icon": "💰",
         "items": [
-          { "label": "전세 / 월세", "type": "input", "placeholder": "전세 또는 월세" },
-          { "label": "전세금 / 월세금", "type": "input", "placeholder": "금액 입력" },
-          { "label": "관리비", "type": "input", "placeholder": "관리비 입력" }
+          { "label": "타입", "type": "select", "options": ["전세", "월세", "반전세"] },
+          { "label": "금액", "type": "input", "placeholder": "금액" },
+          { "label": "관리비", "type": "input", "placeholder": "금액" }
         ]
       },
       {

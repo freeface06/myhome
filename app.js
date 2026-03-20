@@ -87,10 +87,10 @@ function updateUIForRealtime(eventType, houseData) {
       if (houseData[type] && houseData[type].categories) {
         houseData[type].categories.forEach(cat => {
           cat.items.forEach(item => {
-            if (item.type === 'input') {
-              const inputEl = document.querySelector(`input.custom-item-input[data-item-id="${item.id}"]`);
-              if (inputEl && document.activeElement !== inputEl && item.value !== undefined) {
-                inputEl.value = item.value;
+            if (item.type === 'input' || item.type === 'select') {
+              const fieldEl = document.querySelector(`.custom-item-field[data-item-id="${item.id}"]`);
+              if (fieldEl && document.activeElement !== fieldEl && item.value !== undefined) {
+                fieldEl.value = item.value;
               }
             } else {
               const itemEl = document.querySelector(`.check-item[data-item-id="${item.id}"]`);
@@ -273,7 +273,7 @@ const DEFAULT_CHECKLIST_DATA = {
   visit: {
     label: '🏠 방문 체크리스트',
     categories: [
-      { name: '전/월세', icon: '💰', items: [{ label: '전세 / 월세', type: 'input', placeholder: '전세 또는 월세' }, { label: '전세금 / 월세금', type: 'input', placeholder: '금액 입력' }, { label: '관리비', type: 'input', placeholder: '관리비 입력' }] },
+      { name: '전/월세', icon: '💰', items: [{ label: '타입', type: 'select', options: ['전세', '월세', '반전세'] }, { label: '금액', type: 'input', placeholder: '금액 (예: 1억 5천 / 100)' }, { label: '관리비', type: 'input', placeholder: '금액 (예: 10만)' }] },
       { name: '보안/안전', icon: '🔒', items: ['현관 이중잠금장치','CCTV 설치 여부','경비실/관리실 유무','현관 도어록 상태','소화기/화재경보기','저층 방범창 설치 여부'] },
       { name: '수압/배관', icon: '🚿', items: ['수압 상태 (싱크대/샤워기 동시 틀기)','온수 나오는 시간','배수구 물빠짐 상태','보일러 작동 상태','수도 계량기 누수 확인'] },
       { name: '채광/환기', icon: '☀️', items: ['남향 여부 (햇빛 방향)','창문 크기 및 개수','환기 상태 (맞통풍)','베란다 유무','조명 밝기 상태'] },
@@ -341,7 +341,8 @@ function createHouse() {
               text: item.label || item.text || '',
               checked: item.checked || false,
               value: item.value || '',
-              placeholder: item.placeholder || ''
+              placeholder: item.placeholder || '',
+              options: item.options || []
             };
           }
         })
@@ -381,7 +382,7 @@ function calcScore(house, type) {
   let total = 0, checked = 0;
   checklist.categories.forEach(cat => {
     cat.items.forEach(item => {
-      if (item.type !== 'input') {
+      if (item.type !== 'input' && item.type !== 'select') {
         total++;
         if (item.checked) checked++;
       }
@@ -393,7 +394,7 @@ function calcScore(house, type) {
 /** 종합 점수: 방문(100%) 점수만 사용 */
 function calcTotalScore(house) {
   const visitScore = calcScore(house, 'visit');
-  const visitTotal = house.visit.categories.reduce((s, c) => s + c.items.filter(i => i.type !== 'input').length, 0);
+  const visitTotal = house.visit.categories.reduce((s, c) => s + c.items.filter(i => i.type !== 'input' && i.type !== 'select').length, 0);
   if (visitTotal === 0) return 0;
   return visitScore;
 }
@@ -551,7 +552,7 @@ function countChecked(house, type) {
   let total = 0, checked = 0;
   house[type].categories.forEach(cat => {
     cat.items.forEach(item => {
-      if (item.type !== 'input') {
+      if (item.type !== 'input' && item.type !== 'select') {
         total++;
         if (item.checked) checked++;
       }
@@ -672,7 +673,7 @@ function renderDetailView() {
 function renderCategories(house, type) {
   const checklist = house[type];
   return checklist.categories.map((cat, catIdx) => {
-    const checkableItems = cat.items.filter(i => i.type !== 'input');
+    const checkableItems = cat.items.filter(i => i.type !== 'input' && i.type !== 'select');
     const checkedCount = checkableItems.filter(i => i.checked).length;
     const isCollapsed = cat.collapsed;
 
@@ -681,16 +682,27 @@ function renderCategories(house, type) {
         <div class="category-header" data-type="${type}" data-cat-index="${catIdx}">
           <span class="category-icon">${cat.icon}</span>
           <span class="category-name">${escapeHtml(cat.name)}</span>
-          <span class="category-count">${checkedCount}/${checkableItems.length}</span>
+          ${checkableItems.length > 0 ? `<span class="category-count">${checkedCount}/${checkableItems.length}</span>` : ''}
           <span class="category-toggle ${isCollapsed ? 'collapsed' : ''}">▼</span>
         </div>
         <div class="checklist-items ${isCollapsed ? 'collapsed' : ''}">
           ${cat.items.map(item => {
             if (item.type === 'input') {
               return `
-                <div class="check-item-input" data-item-id="${item.id}" style="display:flex; align-items:center; gap:8px; width:100%; margin-bottom: 8px;">
+                <div class="check-item-input" data-item-id="${item.id}" style="display:flex; align-items:center; gap:8px; width:100%; margin-bottom: 8px; padding: 12px 16px; box-sizing: border-box; background: var(--bg-card); border-radius: 12px;">
                   <span class="check-label" style="flex:1;">${escapeHtml(item.text)}</span>
-                  <input type="text" class="custom-item-input" data-item-id="${item.id}" value="${escapeHtml(item.value || '')}" placeholder="${escapeHtml(item.placeholder || '')}" style="flex:2; padding:8px; border:1px solid var(--border-color); border-radius:8px; background:var(--bg-input, transparent); color:var(--text-color); font-size:1rem;">
+                  <input type="text" class="custom-item-field custom-item-input" data-item-id="${item.id}" value="${escapeHtml(item.value || '')}" placeholder="${escapeHtml(item.placeholder || '')}" style="flex:2; width: 100%; box-sizing: border-box; padding:8px; border:1px solid var(--border-color); border-radius:8px; background:var(--bg-input, transparent); color:var(--text-color); font-size:1rem;">
+                </div>
+              `;
+            } else if (item.type === 'select') {
+              const optionsHtml = (item.options || []).map(opt => `<option value="${escapeHtml(opt)}" ${item.value === opt ? 'selected' : ''}>${escapeHtml(opt)}</option>`).join('');
+              return `
+                <div class="check-item-input" data-item-id="${item.id}" style="display:flex; align-items:center; gap:8px; width:100%; margin-bottom: 8px; padding: 12px 16px; box-sizing: border-box; background: var(--bg-card); border-radius: 12px;">
+                  <span class="check-label" style="flex:1;">${escapeHtml(item.text)}</span>
+                  <select class="custom-item-field custom-item-select" data-item-id="${item.id}" style="flex:2; width: 100%; box-sizing: border-box; padding:8px; border:1px solid var(--border-color); border-radius:8px; background:var(--bg-input, transparent); color:var(--text-color); font-size:1rem; cursor: pointer;">
+                    <option value="" disabled ${!item.value ? 'selected' : ''} hidden>선택하세요</option>
+                    ${optionsHtml}
+                  </select>
                 </div>
               `;
             } else {
@@ -796,10 +808,10 @@ function bindDetailEvents() {
     });
   });
 
-  // 커스텀 인풋 항목 값 변경 시
-  document.querySelectorAll('.custom-item-input').forEach(inputEl => {
-    inputEl.addEventListener('input', (e) => {
-      const itemId = inputEl.dataset.itemId;
+  // 커스텀 인풋/셀렉트 항목 값 변경 시
+  document.querySelectorAll('.custom-item-field').forEach(fieldEl => {
+    fieldEl.addEventListener('input', (e) => {
+      const itemId = fieldEl.dataset.itemId;
       let found = false;
       ['visit', 'contract'].forEach(type => {
         if(found) return;
@@ -807,16 +819,21 @@ function bindDetailEvents() {
           if(found) return;
           const target = cat.items.find(i => i.id === itemId);
           if (target) {
-            target.value = inputEl.value;
+            target.value = fieldEl.value;
             house.updatedAt = new Date().toISOString();
             found = true;
           }
         });
       });
     });
-    inputEl.addEventListener('blur', () => {
+    fieldEl.addEventListener('blur', () => {
       saveHouses();
     });
+    if (fieldEl.tagName === 'SELECT') {
+      fieldEl.addEventListener('change', () => {
+        saveHouses();
+      });
+    }
   });
 
   // 체크 토글 (부분 업데이트로 깜빡임 방지)
