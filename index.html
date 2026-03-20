@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0f0f1a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="description" content="전세집 방문 시 체크리스트로 항목을 평가하고, 사진을 첨부하여 집별 점수를 비교하세요.">
+  <title>전세집 체크리스트</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ========== 헤더 ========== -->
+  <header class="app-header">
+    <div class="header-content" id="headerContent">
+      <!-- JS에서 동적 렌더링 -->
+    </div>
+  </header>
+
+  <!-- ========== 집 목록 화면 ========== -->
+  <main id="listView" class="view active">
+    <div class="house-list" id="houseList">
+      <!-- JS에서 동적 렌더링 -->
+    </div>
+  </main>
+
+  <!-- ========== 집 상세 화면 ========== -->
+  <main id="detailView" class="view">
+    <div class="detail-container" id="detailContainer">
+      <!-- JS에서 동적 렌더링 -->
+    </div>
+  </main>
+
+  <!-- ========== 플로팅 추가 버튼 ========== -->
+  <button class="fab" id="fabBtn" title="새 집 추가">＋</button>
+
+  <!-- ========== 사진 전체보기 모달 ========== -->
+  <div class="photo-modal" id="photoModal">
+    <button class="photo-modal-close" id="photoModalClose">✕</button>
+    <img id="photoModalImg" src="" alt="사진 확대">
+  </div>
+
+  <!-- ========== 삭제 확인 모달 ========== -->
+  <div class="confirm-modal" id="confirmModal">
+    <div class="confirm-box">
+      <h3>🗑️ 삭제 확인</h3>
+      <p id="confirmMessage">이 집 정보를 삭제하시겠습니까?<br>삭제된 데이터는 복구할 수 없습니다.</p>
+      <div class="confirm-actions">
+        <button class="btn-cancel" id="confirmCancel">취소</button>
+        <button class="btn-confirm-delete" id="confirmDelete">삭제</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 토스트 알림 ========== -->
+  <div class="toast" id="toast"></div>
+
+  <!-- ========== SVG 그라디언트 정의 ========== -->
+  <svg width="0" height="0" style="position:absolute">
+    <defs>
+      <linearGradient id="scoreGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" style="stop-color:#007aff"/>
+        <stop offset="100%" style="stop-color:#34c759"/>
+      </linearGradient>
+    </defs>
+  </svg>
+
+  <script src="app.js"></script>
+</body>
+</html>
