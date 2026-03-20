@@ -4,19 +4,11 @@
  */
 
 // ========================================
-// Firebase 초기화
+// Supabase 클라이언트 초기화
 // ========================================
-const firebaseConfig = {
-  apiKey: "AIzaSyBK31jjkurTJ0_4eIv28_xMJ3T08kgVCNw",
-  authDomain: "myhome-a0d2a.firebaseapp.com",
-  projectId: "myhome-a0d2a",
-  storageBucket: "myhome-a0d2a.firebasestorage.app",
-  messagingSenderId: "362610937268",
-  appId: "1:362610937268:web:14908e5dd07865198276e1"
-};
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
-const storageRef = firebase.storage();
+const supabaseUrl = 'https://sgrluzhzkymbloqhpcai.supabase.co';
+const supabaseKey = 'sb_publishable_TXnq8dLXUmrCWJXE-nzzfA_2i-7VSpz';
+const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
 
 // ========================================
 // 상수 및 전역 상태
@@ -31,64 +23,87 @@ let appState = {
   currentTab: 'visit',
   defaultChecklist: null,
   deleteTargetId: null,
-  unsubscribe: null       // Firestore 실시간 리스너 해제 함수
+  // unsubscribe: null       // localForage에서는 불필요
 };
 
 // ========================================
 // 데이터 관리 (Firestore + localStorage 하이브리드)
 // ========================================
 
-const LOCAL_CACHE_KEY = 'myhome_houses';
+const STORAGE_KEY = 'appState_houses';
 
-/** localStorage 캐시에 저장 (새로고침 시 즉시 로드용) */
-function saveToLocalCache() {
-  try {
-    localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(appState.houses));
-  } catch (e) {
-    console.warn('로컬 캐시 저장 실패:', e.message);
-  }
-}
-
-/** localStorage 캐시에서 로드 (Firestore 동기화 전 초기 데이터) */
+/** 로컬 캐시에서 로드 (동기식 fallback용, localForage 로드 전 화면 용도) */
 function loadFromLocalCache() {
   try {
-    const data = localStorage.getItem(LOCAL_CACHE_KEY);
+    const data = localStorage.getItem(STORAGE_KEY);
     return data ? JSON.parse(data) : [];
   } catch (e) {
     return [];
   }
 }
 
-/** Firestore 실시간 동기화 시작 */
-function listenToHouses(callback) {
-  return db.collection('houses').orderBy('createdAt', 'desc').onSnapshot(
-    snapshot => {
-      appState.houses = snapshot.docs.map(doc => doc.data());
-      saveToLocalCache(); // 로컬 캐시에도 동기화
-      if (callback) callback();
-    },
-    error => {
-      console.error('Firestore 동기화 실패:', error.code, error.message);
-      // Firestore 실패 시 로컬 캐시에서 복원
-      if (appState.houses.length === 0) {
-        appState.houses = loadFromLocalCache();
-        if (callback) callback();
-        showToast('⚠️ 오프라인 모드 (로컬 데이터 사용)');
-      }
+/** Supabase에서 데이터 로드 시작 */
+async function loadHousesFromDB(callback) {
+  try {
+    const { data, error } = await supabaseClient
+      .from('houses')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    if (data && data.length > 0) {
+      appState.houses = data.map(row => ({
+        id: row.id,
+        title: row.title || '',
+        memo: row.memo || '',
+        photos: row.photos || [],
+        visit: row.visit,
+        contract: row.contract,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      }));
+      // 빠른 로딩용 로컬스토리지 캐싱
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(appState.houses));
+    } else {
+      appState.houses = loadFromLocalCache(); // data 빈 배열이면 fallback
     }
-  );
+    if (callback) callback();
+  } catch (error) {
+    console.error('클라우드 동기화 실패:', error);
+    appState.houses = loadFromLocalCache();
+    if (callback) callback();
+    showToast('⚠️ 클라우드 데이터 로드 실패. 오프라인 모드로 동작합니다.');
+  }
 }
 
-/** Firestore에 개별 집 저장 + 로컬 캐시 동기화 */
-function saveHouse(house) {
+/** Supabase에 개별 집 갱신 및 저장 */
+async function saveHouse(house) {
   house.updatedAt = new Date().toISOString();
-  saveToLocalCache(); // 즉시 로컬에 저장 (새로고침 대비)
-  db.collection('houses').doc(house.id).set(house)
-    .then(() => console.log('✅ Firestore 저장 완료:', house.id))
-    .catch(e => {
-      console.error('❌ Firestore 저장 실패:', e.code, e.message);
-      showToast('⚠️ 클라우드 저장 실패 (로컬에는 저장됨)');
-    });
+  
+  // 빠른 UI 반응을 위해 로컬 캐시 우선 저장
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(appState.houses));
+  
+  try {
+    const { error } = await supabaseClient
+      .from('houses')
+      .upsert({
+        id: house.id,
+        title: house.title,
+        memo: house.memo,
+        photos: house.photos,
+        visit: house.visit,
+        contract: house.contract,
+        created_at: house.createdAt,
+        updated_at: house.updatedAt
+      });
+      
+    if (error) throw error;
+    console.log('✅ 클라우드 저장 완료:', house.id);
+  } catch (e) {
+    console.error('❌ 클라우드 저장 실패:', e);
+    showToast('⚠️ 데이터 클라우드 동기화에 실패했습니다.');
+  }
 }
 
 /** 호환성 유지: 기존 saveHouses() 호출 래핑 */
@@ -97,19 +112,37 @@ function saveHouses() {
   if (house) saveHouse(house);
 }
 
-/** Firestore에서 집 삭제 + Storage 사진 정리 */
+/** 집 데이터 완전 삭제 (Supabase) */
 async function deleteHouseFromDB(houseId) {
-  // 로컬에서 먼저 제거
+  const houseToDelete = appState.houses.find(h => h.id === houseId);
+  // 1. 로컬 상태에서 즉시 제거
   appState.houses = appState.houses.filter(h => h.id !== houseId);
-  saveToLocalCache();
-
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(appState.houses));
+  
   try {
-    const listResult = await storageRef.ref(`houses/${houseId}`).listAll();
-    await Promise.all(listResult.items.map(item => item.delete()));
-  } catch (e) {
-    console.warn('Storage 정리:', e.message);
+    // 2. 해당 집의 이미지들이 스토리지에 있다면 파일 삭제
+    if (houseToDelete && houseToDelete.photos && houseToDelete.photos.length > 0) {
+      const filePaths = houseToDelete.photos
+        .filter(url => url.includes('supabase.co/storage/v1/object/public/house-images/'))
+        .map(url => url.split('house-images/')[1]);
+      
+      if (filePaths.length > 0) {
+         await supabaseClient.storage.from('house-images').remove(filePaths);
+      }
+    }
+
+    // 3. DB 레코드 삭제
+    const { error } = await supabaseClient
+      .from('houses')
+      .delete()
+      .eq('id', houseId);
+      
+    if (error) throw error;
+    console.log(`✅ 데이터 클라우드 삭제 완료: ${houseId}`);
+  } catch(e) {
+    console.warn('데이터 삭제 중 오류:', e.message);
+    showToast('⚠️ 클라우드에서 완벽히 삭제되지 않았을 수 있습니다.');
   }
-  await db.collection('houses').doc(houseId).delete();
 }
 
 /**
@@ -627,24 +660,27 @@ function bindDetailEvents() {
     });
   });
 
-  // 사진 삭제 (Storage에서도 삭제)
+  // 사진 삭제
   document.querySelectorAll('.photo-delete').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const idx = parseInt(btn.dataset.index);
+      
       const photoUrl = house.photos[idx];
 
-      // Firebase Storage에서 삭제 시도
-      if (photoUrl && photoUrl.includes('firebasestorage')) {
+      // IndexedDB(Supabase DB) 데이터 업데이트 수행
+      house.photos.splice(idx, 1);
+      
+      // 스토리지 파일 삭제 (url에서 파일 경로 추출 필요)
+      if (photoUrl && photoUrl.includes('supabase.co/storage/v1/object/public/house-images/')) {
+        const filePath = photoUrl.split('house-images/')[1];
         try {
-          const photoRef = storageRef.refFromURL(photoUrl);
-          await photoRef.delete();
+          await supabaseClient.storage.from('house-images').remove([filePath]);
         } catch (err) {
-          console.warn('Storage 삭제:', err.message);
+          console.warn('스토리지 이미지 삭제 실패:', err);
         }
       }
 
-      house.photos.splice(idx, 1);
       saveHouse(house);
       renderDetailView();
       showToast('사진이 삭제되었습니다');
@@ -771,34 +807,49 @@ async function handlePhotoUpload(e) {
 
   showToast(`📷 ${files.length}장 업로드 중...`);
 
+  let uploadedCount = 0;
   for (const file of files) {
     try {
-      // 이미지 리사이징 → Blob 변환
-      const blob = await resizeImageToBlob(file, 800);
-      // Firebase Storage에 업로드
-      const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}.jpg`;
-      const ref = storageRef.ref(`houses/${house.id}/${fileName}`);
-      await ref.put(blob, { contentType: 'image/jpeg' });
-      // 다운로드 URL 획득 후 photos 배열에 추가
-      const url = await ref.getDownloadURL();
-      house.photos.push(url);
+      // 1. 이미지 리사이징 후 Base64 문자열 반환
+      const base64Data = await resizeImageToBase64(file, 800);
+      // 2. Base64 문자열을 Blob 객체로 변환 (파일 업로드 포맷)
+      const blob = dataURLtoBlob(base64Data);
+
+      // 3. Supabase Storage에 업로드할 파일명 생성 (유니크한 이름)
+      const fileExt = file.name.split('.').pop() || 'jpg';
+      const fileName = `${house.id}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+
+      // 4. 스토리지 버킷에 업로드
+      const { error } = await supabaseClient.storage
+        .from('house-images')
+        .upload(fileName, blob, { contentType: file.type || 'image/jpeg' });
+
+      if (error) throw error;
+
+      // 5. 서버에 업로드된 공용 이미지 URL 획득
+      const { data: urlData } = supabaseClient.storage
+        .from('house-images')
+        .getPublicUrl(fileName);
+
+      house.photos.push(urlData.publicUrl);
+      uploadedCount++;
     } catch (err) {
       console.error('사진 업로드 실패:', err);
-      showToast('⚠️ 사진 업로드 실패');
+      showToast('⚠️ 일부 사진 업로드에 실패했습니다.');
     }
   }
 
   house.updatedAt = new Date().toISOString();
   saveHouse(house);
   renderDetailView();
-  showToast(`📷 ${files.length}장 업로드 완료`);
+  showToast(`📷 ${uploadedCount}장 클라우드 반영 완료`);
 
   // input 초기화
   e.target.value = '';
 }
 
-/** 이미지 리사이징 → Blob 반환 (Firebase Storage 업로드용) */
-function resizeImageToBlob(file, maxSize) {
+/** 이미지 리사이징 → Data URL (Base64) 반환 (업로드 전 전처리용) */
+function resizeImageToBase64(file, maxSize) {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -818,13 +869,25 @@ function resizeImageToBlob(file, maxSize) {
         const canvas = document.createElement('canvas');
         canvas.width = w;
         canvas.height = h;
+        // 화질 저하 및 용량 감소를 위해 JPEG 최적화 (0.7)
         canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.7);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        resolve(dataUrl);
       };
       img.src = event.target.result;
     };
     reader.readAsDataURL(file);
   });
+}
+
+/** Base64 문자열을 Blob 객체로 변환하는 유틸리티 함수 */
+function dataURLtoBlob(dataurl) {
+  var arr = dataurl.split(','), mime = arr[0].match(/:(.*?);/)[1],
+      bstr = atob(arr[1]), n = bstr.length, u8arr = new Uint8Array(n);
+  while(n--){
+      u8arr[n] = bstr.charCodeAt(n);
+  }
+  return new Blob([u8arr], {type:mime});
 }
 
 // ========================================
@@ -930,29 +993,14 @@ async function initApp() {
   initModals();
   initFAB();
 
-  // Firestore 실시간 동기화 시작 (여러 기기에서 변경 시 자동 갱신)
-  appState.unsubscribe = listenToHouses(() => {
+  // IndexedDB 기반 로컬 데이터 로드 
+  await loadHousesFromDB(() => {
     if (!appState.currentHouseId) {
       // 목록 화면 → 목록 갱신
       renderHouseList();
     } else {
-      // 상세 화면 → 현재 보고 있는 집의 데이터가 변경되었으면 반영
-      const house = getCurrentHouse();
-      if (!house) {
-        // 다른 기기에서 삭제된 경우
-        showToast('이 집이 다른 기기에서 삭제되었습니다');
-        showListView();
-        return;
-      }
-      // 점수/카운트 실시간 업데이트 (깜빡임 없이)
-      updateScoreUI(house);
-      updateCategoryCounts(house);
-      // 현재 포커스된 입력 필드가 아닌 경우에만 전체 재렌더링
-      const activeEl = document.activeElement;
-      const isTyping = activeEl && (activeEl.id === 'titleInput' || activeEl.id === 'memoInput' || activeEl.classList.contains('add-item-input'));
-      if (!isTyping) {
-        renderDetailView();
-      }
+      // 상세 화면
+      renderDetailView();
     }
   });
 
