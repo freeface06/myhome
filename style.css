@@ -339,6 +339,7 @@ input, textarea, button {
 
 .title-input {
   flex: 1;
+  min-width: 0;
   background: var(--bg-input);
   border: 1.5px solid transparent;
   border-radius: var(--radius-md);
