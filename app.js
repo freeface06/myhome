@@ -82,14 +82,21 @@ function updateUIForRealtime(eventType, houseData) {
       memoInput.value = houseData.memo;
     }
     
-    // 체크박스 상태 동기화
+    // 체크박스 및 Input 상태 동기화
     ['visit', 'contract'].forEach(type => {
       if (houseData[type] && houseData[type].categories) {
         houseData[type].categories.forEach(cat => {
           cat.items.forEach(item => {
-            const itemEl = document.querySelector(`.check-item[data-item-id="${item.id}"]`);
-            if (itemEl) {
-              itemEl.classList.toggle('checked', item.checked);
+            if (item.type === 'input') {
+              const inputEl = document.querySelector(`input.custom-item-input[data-item-id="${item.id}"]`);
+              if (inputEl && document.activeElement !== inputEl && item.value !== undefined) {
+                inputEl.value = item.value;
+              }
+            } else {
+              const itemEl = document.querySelector(`.check-item[data-item-id="${item.id}"]`);
+              if (itemEl) {
+                itemEl.classList.toggle('checked', item.checked);
+              }
             }
           });
         });
@@ -266,6 +273,7 @@ const DEFAULT_CHECKLIST_DATA = {
   visit: {
     label: '🏠 방문 체크리스트',
     categories: [
+      { name: '전/월세', icon: '💰', items: [{ label: '전세 / 월세', type: 'input', placeholder: '전세 또는 월세' }, { label: '전세금 / 월세금', type: 'input', placeholder: '금액 입력' }, { label: '관리비', type: 'input', placeholder: '관리비 입력' }] },
       { name: '보안/안전', icon: '🔒', items: ['현관 이중잠금장치','CCTV 설치 여부','경비실/관리실 유무','현관 도어록 상태','소화기/화재경보기','저층 방범창 설치 여부'] },
       { name: '수압/배관', icon: '🚿', items: ['수압 상태 (싱크대/샤워기 동시 틀기)','온수 나오는 시간','배수구 물빠짐 상태','보일러 작동 상태','수도 계량기 누수 확인'] },
       { name: '채광/환기', icon: '☀️', items: ['남향 여부 (햇빛 방향)','창문 크기 및 개수','환기 상태 (맞통풍)','베란다 유무','조명 밝기 상태'] },
@@ -285,7 +293,7 @@ const DEFAULT_CHECKLIST_DATA = {
       { name: '서류 확인', icon: '📄', items: ['등기부등본 갑구 (소유자 확인, 가압류/가처분/경매 여부)','등기부등본 을구 (근저당권/대출 금액 확인)','건축물대장 확인 (불법건축물/무단증축 여부)','토지이용계획 확인','집주인 신분증 대조 (등기부 소유자와 일치 여부)'] },
       { name: '임대인 확인', icon: '👤', items: ['대리인 계약 시 위임장/인감증명서 확인','대리인 시 집주인과 직접 통화 확인','국세/지방세 완납증명서 징구','임대인 세금 체납 여부 확인'] },
       { name: '전세 안전', icon: '🛡️', items: ['전세보증보험 가입 가능 여부 (HUG/SGI/HF)','근저당+보증금 합계 < 시세 70~80% 확인','전세가율 확인 (깡통전세 위험)','확정일자 부여 가능 여부'] },
-      { name: '특약사항', icon: '✍️', items: ['전세자금대출 불가 시 계약 무효 및 계약금 반환 특약','계약~잔금까지 추가 근저당 설정 금지 특약','입주 전 하자 수리 임대인 부담 특약','기타 특약사항 협의 및 기재'] },
+      { name: '특약사항', icon: '✍️', items: ['대출 안 나올 경우 계약 해지 및 계약금 반환 특약','보증보험 가입 불가 시 계약 해지 및 계약금 반환 특약','계약~잔금까지 추가 근저당 설정 금지 특약','입주 전 하자 수리 임대인 부담 특약','기타 특약사항 협의 및 기재'] },
       { name: '계약 조건', icon: '📝', items: ['계약 기간 확인 (2년 이상)','중개수수료 확인','잔금일/입주일 확인','원상복구 범위 협의'] },
       { name: '입주 전 확인', icon: '🔑', items: ['전입신고 (잔금 당일 즉시)','확정일자 받기 (정부24/주민센터)','관리비 항목 및 금액 확인','공과금 정산 확인 (전기/가스/수도)','열쇠/도어락 비밀번호 변경','하자 보수 요청사항 정리'] }
     ]
@@ -318,11 +326,25 @@ function createHouse() {
         name: cat.name,
         icon: cat.icon,
         collapsed: false,
-        items: cat.items.map(text => ({
-          id: generateId(),
-          text,
-          checked: false
-        }))
+        items: cat.items.map(item => {
+          if (typeof item === 'string') {
+            return {
+              id: generateId(),
+              type: 'check',
+              text: item,
+              checked: false
+            };
+          } else {
+            return {
+              id: generateId(),
+              type: item.type || 'check',
+              text: item.label || item.text || '',
+              checked: item.checked || false,
+              value: item.value || '',
+              placeholder: item.placeholder || ''
+            };
+          }
+        })
       }))
     };
   };
@@ -359,8 +381,10 @@ function calcScore(house, type) {
   let total = 0, checked = 0;
   checklist.categories.forEach(cat => {
     cat.items.forEach(item => {
-      total++;
-      if (item.checked) checked++;
+      if (item.type !== 'input') {
+        total++;
+        if (item.checked) checked++;
+      }
     });
   });
   return total === 0 ? 0 : Math.round((checked / total) * 100);
@@ -369,7 +393,7 @@ function calcScore(house, type) {
 /** 종합 점수: 방문(100%) 점수만 사용 */
 function calcTotalScore(house) {
   const visitScore = calcScore(house, 'visit');
-  const visitTotal = house.visit.categories.reduce((s, c) => s + c.items.length, 0);
+  const visitTotal = house.visit.categories.reduce((s, c) => s + c.items.filter(i => i.type !== 'input').length, 0);
   if (visitTotal === 0) return 0;
   return visitScore;
 }
@@ -527,8 +551,10 @@ function countChecked(house, type) {
   let total = 0, checked = 0;
   house[type].categories.forEach(cat => {
     cat.items.forEach(item => {
-      total++;
-      if (item.checked) checked++;
+      if (item.type !== 'input') {
+        total++;
+        if (item.checked) checked++;
+      }
     });
   });
   return { total, checked };
@@ -646,7 +672,8 @@ function renderDetailView() {
 function renderCategories(house, type) {
   const checklist = house[type];
   return checklist.categories.map((cat, catIdx) => {
-    const checkedCount = cat.items.filter(i => i.checked).length;
+    const checkableItems = cat.items.filter(i => i.type !== 'input');
+    const checkedCount = checkableItems.filter(i => i.checked).length;
     const isCollapsed = cat.collapsed;
 
     return `
@@ -654,16 +681,27 @@ function renderCategories(house, type) {
         <div class="category-header" data-type="${type}" data-cat-index="${catIdx}">
           <span class="category-icon">${cat.icon}</span>
           <span class="category-name">${escapeHtml(cat.name)}</span>
-          <span class="category-count">${checkedCount}/${cat.items.length}</span>
+          <span class="category-count">${checkedCount}/${checkableItems.length}</span>
           <span class="category-toggle ${isCollapsed ? 'collapsed' : ''}">▼</span>
         </div>
         <div class="checklist-items ${isCollapsed ? 'collapsed' : ''}">
-          ${cat.items.map(item => `
-            <div class="check-item ${item.checked ? 'checked' : ''}" data-item-id="${item.id}">
-              <div class="custom-checkbox">${SVG_CHECK}</div>
-              <span class="check-label">${escapeHtml(item.text)}</span>
-            </div>
-          `).join('')}
+          ${cat.items.map(item => {
+            if (item.type === 'input') {
+              return `
+                <div class="check-item-input" data-item-id="${item.id}" style="display:flex; align-items:center; gap:8px; width:100%; margin-bottom: 8px;">
+                  <span class="check-label" style="flex:1;">${escapeHtml(item.text)}</span>
+                  <input type="text" class="custom-item-input" data-item-id="${item.id}" value="${escapeHtml(item.value || '')}" placeholder="${escapeHtml(item.placeholder || '')}" style="flex:2; padding:8px; border:1px solid var(--border-color); border-radius:8px; background:var(--bg-input, transparent); color:var(--text-color); font-size:1rem;">
+                </div>
+              `;
+            } else {
+              return `
+                <div class="check-item ${item.checked ? 'checked' : ''}" data-item-id="${item.id}">
+                  <div class="custom-checkbox">${SVG_CHECK}</div>
+                  <span class="check-label">${escapeHtml(item.text)}</span>
+                </div>
+              `;
+            }
+          }).join('')}
         </div>
       </div>
     `;
@@ -755,6 +793,29 @@ function bindDetailEvents() {
       const toggle = header.querySelector('.category-toggle');
       items.classList.toggle('collapsed');
       toggle.classList.toggle('collapsed');
+    });
+  });
+
+  // 커스텀 인풋 항목 값 변경 시
+  document.querySelectorAll('.custom-item-input').forEach(inputEl => {
+    inputEl.addEventListener('input', (e) => {
+      const itemId = inputEl.dataset.itemId;
+      let found = false;
+      ['visit', 'contract'].forEach(type => {
+        if(found) return;
+        house[type].categories.forEach(cat => {
+          if(found) return;
+          const target = cat.items.find(i => i.id === itemId);
+          if (target) {
+            target.value = inputEl.value;
+            house.updatedAt = new Date().toISOString();
+            found = true;
+          }
+        });
+      });
+    });
+    inputEl.addEventListener('blur', () => {
+      saveHouses();
     });
   });
 
