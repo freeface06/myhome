@@ -10,7 +10,84 @@ const supabaseUrl = 'https://sgrluzhzkymbloqhpcai.supabase.co';
 const supabaseKey = 'sb_publishable_TXnq8dLXUmrCWJXE-nzzfA_2i-7VSpz';
 const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
 
+// 실시간 구독 객체
+let realtimeChannel = null;
+
 // ========================================
+// 실시간 동기화 (Realtime) 리스너 설정
+// ========================================
+function setupRealtimeSubscription() {
+  if (realtimeChannel) return;
+
+  realtimeChannel = supabaseClient
+    .channel('public:houses')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'houses' }, payload => {
+      const { eventType, new: newRow, old: oldRow } = payload;
+
+      if (eventType === 'INSERT' || eventType === 'UPDATE') {
+        const houseData = {
+          id: newRow.id,
+          title: newRow.title || '',
+          memo: newRow.memo || '',
+          photos: newRow.photos || [],
+          visit: newRow.visit,
+          contract: newRow.contract,
+          createdAt: newRow.created_at,
+          updatedAt: newRow.updated_at
+        };
+
+        const existingIdx = appState.houses.findIndex(h => h.id === newRow.id);
+        if (existingIdx >= 0) {
+          appState.houses[existingIdx] = houseData;
+        } else {
+          appState.houses.unshift(houseData);
+        }
+
+        // 현재 화면 업데이트 로직
+        updateUIForRealtime(eventType, houseData);
+
+      } else if (eventType === 'DELETE') {
+        appState.houses = appState.houses.filter(h => h.id !== oldRow.id);
+        if (appState.currentHouseId === oldRow.id) {
+          showToast('⚠️ 다른 사용자가 이 집을 삭제했습니다.');
+          showListView();
+        } else if (document.getElementById('listView').classList.contains('active')) {
+          renderHouseList();
+        }
+      }
+
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(appState.houses));
+    })
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        console.log('✅ Supabase 실시간 동기화 연결됨');
+      }
+    });
+}
+
+function updateUIForRealtime(eventType, houseData) {
+  const isListView = document.getElementById('listView').classList.contains('active');
+  const isDetailView = document.getElementById('detailView').classList.contains('active');
+
+  if (isListView) {
+    renderHouseList();
+  } else if (isDetailView && appState.currentHouseId === houseData.id) {
+    // 사용자가 텍스트를 입력 중인지 확인 (입력 중이면 렌더링 스킵하여 포커스 유지)
+    const activeElem = document.activeElement;
+    const isTyping = activeElem && (activeElem.tagName === 'INPUT' || activeElem.tagName === 'TEXTAREA');
+    
+    // 사진 확대 모달이 열려있는지도 체크
+    const isModalOpen = document.getElementById('photoModal').classList.contains('active');
+
+    if (!isTyping && !isModalOpen) {
+      // 뷰 전체를 덮어 씌우는 방식
+      const scrollPos = window.scrollY; // 스크롤 위치 기억
+      renderDetailView();
+      window.scrollTo(0, scrollPos); // 스크롤 위치 복구
+    }
+  }
+}
+
 // 상수 및 전역 상태
 // ========================================
 const SVG_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
@@ -68,6 +145,10 @@ async function loadHousesFromDB(callback) {
     } else {
       appState.houses = loadFromLocalCache(); // data 빈 배열이면 fallback
     }
+    
+    // 데이터 로드 성공 후 실시간 동기화 채널 열기
+    setupRealtimeSubscription();
+
     if (callback) callback();
   } catch (error) {
     console.error('클라우드 동기화 실패:', error);
@@ -516,14 +597,8 @@ function renderCategories(house, type) {
             <div class="check-item ${item.checked ? 'checked' : ''}" data-item-id="${item.id}">
               <div class="custom-checkbox">${SVG_CHECK}</div>
               <span class="check-label">${escapeHtml(item.text)}</span>
-              <button class="check-item-delete" data-item-id="${item.id}" data-type="${type}" data-cat-index="${catIdx}">✕</button>
             </div>
           `).join('')}
-        </div>
-        <div class="add-item-row">
-          <input type="text" class="add-item-input" placeholder="항목 추가..." 
-                 data-type="${type}" data-cat-index="${catIdx}">
-          <button class="add-item-btn" data-type="${type}" data-cat-index="${catIdx}">추가</button>
         </div>
       </div>
     `;
@@ -577,8 +652,6 @@ function bindDetailEvents() {
   // 체크 토글 (부분 업데이트로 깜빡임 방지)
   document.querySelectorAll('.check-item').forEach(itemEl => {
     itemEl.addEventListener('click', (e) => {
-      // 삭제 버튼 클릭 시 무시
-      if (e.target.closest('.check-item-delete')) return;
 
       const itemId = itemEl.dataset.itemId;
       const isChecked = toggleCheckItem(house, itemId);
@@ -592,58 +665,6 @@ function bindDetailEvents() {
       updateCategoryCounts(house);
     });
   });
-
-  // 항목 삭제
-  document.querySelectorAll('.check-item-delete').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const itemId = btn.dataset.itemId;
-      const type = btn.dataset.type;
-      const catIdx = parseInt(btn.dataset.catIndex);
-      house[type].categories[catIdx].items = house[type].categories[catIdx].items.filter(i => i.id !== itemId);
-      saveHouses();
-      renderDetailView();
-      showToast('항목이 삭제되었습니다');
-    });
-  });
-
-  // 항목 추가
-  document.querySelectorAll('.add-item-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const type = btn.dataset.type;
-      const catIdx = parseInt(btn.dataset.catIndex);
-      const input = document.querySelector(`.add-item-input[data-type="${type}"][data-cat-index="${catIdx}"]`);
-      const text = input.value.trim();
-      if (!text) {
-        input.focus();
-        return;
-      }
-      house[type].categories[catIdx].items.push({
-        id: generateId(),
-        text,
-        checked: false
-      });
-      saveHouses();
-      renderDetailView();
-      showToast('항목이 추가되었습니다');
-    });
-  });
-
-  // Enter 키로 항목 추가
-  document.querySelectorAll('.add-item-input').forEach(input => {
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        const type = input.dataset.type;
-        const catIdx = input.dataset.catIndex;
-        document.querySelector(`.add-item-btn[data-type="${type}"][data-cat-index="${catIdx}"]`).click();
-      }
-    });
-  });
-
-  // 카테고리 추가 (방문)
-  bindCategoryAdd('Visit', 'visit');
-  // 카테고리 추가 (계약)
-  bindCategoryAdd('Contract', 'contract');
 
   // 사진 추가
   document.getElementById('photoAddBtn').addEventListener('click', () => {
